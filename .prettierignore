@@ -4,3 +4,9 @@ coverage
 package-lock.json
 playwright-report
 test-results
+apps/simulator/src/components/base
+apps/simulator/src/components/foundations
+apps/simulator/src/utils
+apps/simulator/src/styles
+# O prompt é instrução para o modelo: nenhum formatador deve alterar o texto.
+apps/agent/prompts
