@@ -1,0 +1,21 @@
+# Dependências e build
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Ambiente e segredos
+.env
+.env.*
+!.env.example
+
+# Logs e temporários
+*.log
+npm-debug.log*
+.DS_Store
+tmp/
+
+# Playwright / evals
+playwright-report/
+test-results/
+evals/results/
