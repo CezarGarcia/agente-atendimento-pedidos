@@ -24,7 +24,8 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
     "e2e:up": "docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait",
     "e2e:down": "docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v",
-    "test:e2e": "vitest run --config e2e/vitest.config.ts"
+    "test:e2e": "vitest run --config e2e/vitest.config.ts",
+    "eval": "npm run eval -w @agente/agent --"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

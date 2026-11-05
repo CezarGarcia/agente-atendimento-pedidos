@@ -290,6 +290,22 @@ export class FakeOrdersApi implements OrdersApi {
         { productId: 14, quantity: 1, cents: 499990 },
       ]),
     ],
+    [
+      '100103',
+      makeOrder(
+        '100103',
+        CUSTOMERS.ana,
+        'DELIVERED',
+        [{ productId: 18, quantity: 2, cents: 4990 }],
+        'QB987654321BR',
+      ),
+    ],
+    [
+      '100301',
+      makeOrder('100301', CUSTOMERS.bruno, 'AWAITING_PAYMENT', [
+        { productId: 10, quantity: 1, cents: 54500 },
+      ]),
+    ],
   ]);
   readonly cancelCalls: { orderId: string; idempotencyKey: string; reason: string | null }[] = [];
   readonly failing = new Set<FakeOperation>();

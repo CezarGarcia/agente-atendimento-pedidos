@@ -241,7 +241,11 @@ async function anthropic(req: IncomingMessage, res: ServerResponse): Promise<voi
   currentSystem = body['system'];
   const messages = (body['messages'] ?? []) as Message[];
   const tools = (body['tools'] ?? []) as { name: string }[];
-  const decision = decide(messages, tools);
+  // Saída estruturada (usada pelo juiz dos evals): devolve um veredito fixo e válido.
+  const decision =
+    body['output_config'] && (body['output_config'] as { format?: unknown }).format
+      ? reply(JSON.stringify({ score: 4, verdict: 'pass', reasons: 'veredito fixo do stub' }))
+      : decide(messages, tools);
   counter += 1;
   res.writeHead(200, { 'content-type': 'application/json', 'request-id': `req_stub_${counter}` });
   res.end(
