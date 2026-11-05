@@ -3,7 +3,7 @@
   "info": {
     "title": "API de Pedidos",
     "version": "1.0.0",
-    "description": "API principal de pedidos. É a **fonte da verdade** do status dos pedidos e das regras de\ncancelamento: o agente de IA consulta e solicita, mas quem decide é esta API.\n\n### Regras aplicadas\n- Um pedido só pode ser cancelado enquanto está `PROCESSING` (em processamento).\n- Pedidos enviados, entregues, já cancelados ou aguardando pagamento **não** são cancelados\n  pelo fluxo automatizado (`409 ORDER_NOT_CANCELLABLE`, com o motivo em `reason`).\n- Toda consulta é escopada pelo cliente. Pedido de outro cliente responde `404`, igual a um\n  pedido inexistente, para não revelar que ele existe.\n- O cancelamento exige `Idempotency-Key`: repetir a mesma chave devolve o resultado original\n  sem executar a ação duas vezes.\n\n### Como distinguir os resultados\n| Resultado | HTTP | `code` |\n| --- | --- | --- |\n| Sucesso | 200 | — |\n| Pedido não encontrado | 404 | `ORDER_NOT_FOUND` |\n| Pedido não cancelável | 409 | `ORDER_NOT_CANCELLABLE` |\n| Erro técnico | 500 / 503 | `INTERNAL_ERROR` / `SERVICE_UNAVAILABLE` |\n\nPara testar por aqui, clique em **Authorize** e informe a chave de desenvolvimento\n`dev-swagger-key-change-me` (configurada no docker-compose)."
+    "description": "API principal de pedidos. É a **fonte da verdade** do status dos pedidos e das regras de\ncancelamento: o agente de IA consulta e solicita, mas quem decide é esta API.\n\n### Regras aplicadas\n- Um pedido só pode ser cancelado enquanto está `PROCESSING` (em processamento).\n- Pedidos enviados, entregues, já cancelados ou aguardando pagamento **não** são cancelados\n  pelo fluxo automatizado (`409 ORDER_NOT_CANCELLABLE`, com o motivo em `reason`).\n- Toda consulta é escopada pelo cliente. Pedido de outro cliente responde `404`, igual a um\n  pedido inexistente, para não revelar que ele existe.\n- O cancelamento exige `Idempotency-Key`: repetir a mesma chave devolve o resultado original\n  sem executar a ação duas vezes.\n\n### Como distinguir os resultados\n| Resultado | HTTP | `code` |\n| --- | --- | --- |\n| Sucesso | 200 | — |\n| Pedido não encontrado | 404 | `ORDER_NOT_FOUND` |\n| Pedido não cancelável | 409 | `ORDER_NOT_CANCELLABLE` |\n| Erro técnico | 500 / 503 | `INTERNAL_ERROR` / `SERVICE_UNAVAILABLE` |\n\nPara testar por aqui, clique em **Authorize** e informe uma chave configurada em\n`ORDERS_API_KEYS` (o README traz a chave do ambiente local)."
   },
   "servers": [
     {
@@ -69,10 +69,10 @@
                     }
                   },
                   "required": ["path", "message"]
-                }
+                },
+                "description": "Presente quando campos específicos falharam na validação."
               }
-            },
-            "required": ["errors"]
+            }
           }
         ],
         "description": "Erro no formato RFC 9457 (application/problem+json). Use `code` para decidir o tratamento."
@@ -103,6 +103,7 @@
               "ROUTE_NOT_FOUND",
               "ORDER_NOT_CANCELLABLE",
               "PAYLOAD_TOO_LARGE",
+              "UNSUPPORTED_MEDIA_TYPE",
               "IDEMPOTENCY_KEY_MISMATCH",
               "RATE_LIMITED",
               "INTERNAL_ERROR",
@@ -750,11 +751,11 @@
               "minLength": 8,
               "maxLength": 128,
               "pattern": "^[A-Za-z0-9._:-]+$",
-              "description": "Chave única por tentativa lógica de cancelamento. Repetir a mesma chave com o mesmo corpo devolve a resposta original sem executar a ação de novo.",
-              "example": "conv-7f3a9c:cancel:100101"
+              "description": "Chave única por tentativa lógica de cancelamento (ex.: uma confirmação do cliente). Reutilize-a somente para repetir a MESMA requisição após timeout ou falha de rede: a resposta original é devolvida sem executar a ação de novo. Válida por 24 horas.",
+              "example": "pending-6b0e3f2a-9d1c-4c55-8f5e-2a7d1b9c0e41"
             },
             "required": true,
-            "description": "Chave única por tentativa lógica de cancelamento. Repetir a mesma chave com o mesmo corpo devolve a resposta original sem executar a ação de novo.",
+            "description": "Chave única por tentativa lógica de cancelamento (ex.: uma confirmação do cliente). Reutilize-a somente para repetir a MESMA requisição após timeout ou falha de rede: a resposta original é devolvida sem executar a ação de novo. Válida por 24 horas.",
             "name": "idempotency-key",
             "in": "header"
           }
@@ -771,7 +772,16 @@
         },
         "responses": {
           "200": {
-            "description": "Pedido cancelado. O header `Idempotent-Replayed: true` indica resposta repetida.",
+            "description": "Pedido cancelado.",
+            "headers": {
+              "Idempotent-Replayed": {
+                "description": "`true` quando a resposta é a repetição de uma requisição já processada.",
+                "schema": {
+                  "type": "string",
+                  "enum": ["true", "false"]
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -816,6 +826,26 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/OrderNotCancellableProblem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Corpo maior que 16 KB (`PAYLOAD_TOO_LARGE`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Corpo que não é JSON UTF-8 (`UNSUPPORTED_MEDIA_TYPE`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }

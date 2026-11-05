@@ -1,7 +1,13 @@
 import type { Selectable } from 'kysely';
 
 import type { CancellationOutcome } from '../application/ports.js';
-import { evaluateCancellation, isOrderStatus, type Order } from '../domain/order.js';
+import {
+  CANCELLATION_BLOCK_REASONS,
+  evaluateCancellation,
+  isOrderStatus,
+  type CancellationBlockReason,
+  type Order,
+} from '../domain/order.js';
 import type { OrderItemsTable, OrdersTable, StoredOutcome } from './database.js';
 
 /** Representação serializável de um pedido, usada para gravar respostas idempotentes. */
@@ -20,6 +26,9 @@ export interface OrderSnapshot {
   cancelledAt: string | null;
   cancellationReason: string | null;
 }
+
+const isBlockReason = (value: string): value is CancellationBlockReason =>
+  (CANCELLATION_BLOCK_REASONS as readonly string[]).includes(value);
 
 export class DataIntegrityError extends Error {
   override readonly name = 'DataIntegrityError';
@@ -109,11 +118,12 @@ export function storedToOutcome(stored: StoredOutcome): CancellationOutcome {
     case 'not_cancellable': {
       const order = snapshotToOrder(stored.order);
       const eligibility = evaluateCancellation(order.status);
-      return {
-        kind: 'not_cancellable',
-        order,
-        reason: eligibility.eligible ? 'UNKNOWN_STATUS' : eligibility.reason,
-      };
+      const reason = isBlockReason(stored.reason)
+        ? stored.reason
+        : eligibility.eligible
+          ? 'UNKNOWN_STATUS'
+          : eligibility.reason;
+      return { kind: 'not_cancellable', order, reason };
     }
   }
 }

@@ -188,6 +188,59 @@ describe('idempotência', () => {
   });
 });
 
+describe('proteção de dados e consistência', () => {
+  it('mascara dados pessoais digitados no motivo e nunca registra o motivo em log', async () => {
+    const res = await cancel(ANA, '100101').send({ reason: 'meu cpf é 529.982.247-25, desisti' });
+    expect(res.status).toBe(200);
+
+    const [row] = await historyOf('100101');
+    expect(row?.reason).toBe('meu cpf é [CPF REMOVIDO], desisti');
+    const stored = await database.db
+      .selectFrom('orders')
+      .select('cancellation_reason')
+      .where('id', '=', '100101')
+      .executeTakeFirstOrThrow();
+    expect(stored.cancellation_reason).not.toContain('529.982');
+    expect(JSON.stringify(logLines)).not.toMatch(/529\.982|desisti/);
+  });
+
+  it('remove a previsão de entrega do pedido cancelado', async () => {
+    const res = await cancel(BRUNO, '100201');
+    expect(
+      CancellationResultSchema.parse(res.body).order.shipping.estimatedDeliveryDate,
+    ).toBeNull();
+  });
+
+  it('repetição de um 404 também informa Idempotent-Replayed', async () => {
+    const key = `conv-${randomUUID()}`;
+    await cancel(ANA, '999999', key);
+    const replay = await cancel(ANA, '999999', key);
+    expect(replay.status).toBe(404);
+    expect(replay.headers['idempotent-replayed']).toBe('true');
+  });
+
+  it('uma chave expirada (24h) inicia uma nova tentativa', async () => {
+    const key = `conv-${randomUUID()}`;
+    expect((await cancel(CARLA, '100301', key)).status).toBe(409); // aguardando pagamento
+
+    // O pagamento é confirmado e a chave envelhece além do TTL.
+    await database.db
+      .updateTable('orders')
+      .set({ status: 'PROCESSING' })
+      .where('id', '=', '100301')
+      .execute();
+    await database.db
+      .updateTable('idempotency_keys')
+      .set({ created_at: new Date(Date.now() - 25 * 60 * 60 * 1000) })
+      .where('key', '=', key)
+      .execute();
+
+    const retry = await cancel(CARLA, '100301', key);
+    expect(retry.status).toBe(200);
+    expect(retry.headers['idempotent-replayed']).toBe('false');
+  });
+});
+
 describe('concorrência', () => {
   it('10 cancelamentos simultâneos do mesmo pedido: exatamente 1 sucesso', async () => {
     const results = await Promise.all(Array.from({ length: 10 }, () => cancel(BRUNO, '100201')));

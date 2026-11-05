@@ -54,6 +54,7 @@ describe('cancelOrder', () => {
         cancelledAt: now,
         updatedAt: now,
         cancellationReason: 'comprei errado',
+        estimatedDeliveryDate: null,
       },
     });
   });

@@ -74,6 +74,7 @@ export function ordersRouter(service: OrdersService): Router {
         res.json({ order: presentOrder(result.order) });
         return;
       case 'not_found':
+        res.setHeader('Idempotent-Replayed', String(result.replayed));
         throw new HttpProblem(
           'ORDER_NOT_FOUND',
           `Pedido ${orderId} não encontrado para este cliente.`,

@@ -40,6 +40,13 @@ const commonErrors = {
   },
 };
 
+const replayedHeader = {
+  'Idempotent-Replayed': {
+    description: '`true` quando a resposta é a repetição de uma requisição já processada.',
+    schema: { type: 'string' as const, enum: ['true', 'false'] },
+  },
+};
+
 const CorrelationHeaderSchema = z.object({
   'x-correlation-id': z.string().optional().openapi({
     description: 'Identificador de correlação propagado entre serviços (gerado se ausente).',
@@ -67,8 +74,8 @@ cancelamento: o agente de IA consulta e solicita, mas quem decide é esta API.
 | Pedido não cancelável | 409 | \`ORDER_NOT_CANCELLABLE\` |
 | Erro técnico | 500 / 503 | \`INTERNAL_ERROR\` / \`SERVICE_UNAVAILABLE\` |
 
-Para testar por aqui, clique em **Authorize** e informe a chave de desenvolvimento
-\`dev-swagger-key-change-me\` (configurada no docker-compose).
+Para testar por aqui, clique em **Authorize** e informe uma chave configurada em
+\`ORDERS_API_KEYS\` (o README traz a chave do ambiente local).
 `;
 
 export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generateDocument']> {
@@ -160,8 +167,8 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
     },
     responses: {
       200: {
-        description:
-          'Pedido cancelado. O header `Idempotent-Replayed: true` indica resposta repetida.',
+        description: 'Pedido cancelado.',
+        headers: replayedHeader,
         content: json(CancellationResultSchema),
       },
       404: {
@@ -171,6 +178,14 @@ export function buildOpenApiDocument(): ReturnType<OpenApiGeneratorV31['generate
       409: {
         description: 'Pedido não pode ser cancelado (`ORDER_NOT_CANCELLABLE`).',
         content: problem(OrderNotCancellableProblemSchema),
+      },
+      413: {
+        description: 'Corpo maior que 16 KB (`PAYLOAD_TOO_LARGE`).',
+        content: problem(ProblemSchema),
+      },
+      415: {
+        description: 'Corpo que não é JSON UTF-8 (`UNSUPPORTED_MEDIA_TYPE`).',
+        content: problem(ProblemSchema),
       },
       422: {
         description: 'Idempotency-Key reutilizada com outro corpo (`IDEMPOTENCY_KEY_MISMATCH`).',

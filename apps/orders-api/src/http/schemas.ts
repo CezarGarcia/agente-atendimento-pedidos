@@ -45,9 +45,10 @@ export const IdempotencyKeySchema = z
   .regex(/^[A-Za-z0-9._:-]+$/, 'Idempotency-Key contém caracteres inválidos')
   .openapi({
     description:
-      'Chave única por tentativa lógica de cancelamento. Repetir a mesma chave com o mesmo corpo ' +
-      'devolve a resposta original sem executar a ação de novo.',
-    example: 'conv-7f3a9c:cancel:100101',
+      'Chave única por tentativa lógica de cancelamento (ex.: uma confirmação do cliente). ' +
+      'Reutilize-a somente para repetir a MESMA requisição após timeout ou falha de rede: a ' +
+      'resposta original é devolvida sem executar a ação de novo. Válida por 24 horas.',
+    example: 'pending-6b0e3f2a-9d1c-4c55-8f5e-2a7d1b9c0e41',
   });
 
 export const CancellationRequestSchema = z
@@ -191,7 +192,10 @@ export const ProblemSchema = z
   });
 
 export const ValidationProblemSchema = ProblemSchema.extend({
-  errors: z.array(z.object({ path: z.string(), message: z.string() })),
+  errors: z
+    .array(z.object({ path: z.string(), message: z.string() }))
+    .optional()
+    .openapi({ description: 'Presente quando campos específicos falharam na validação.' }),
 }).openapi('ValidationProblem');
 
 export const OrderNotCancellableProblemSchema = ProblemSchema.extend({

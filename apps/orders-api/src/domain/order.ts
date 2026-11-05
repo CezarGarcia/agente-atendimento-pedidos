@@ -52,12 +52,15 @@ export interface Customer {
   readonly fullName: string;
 }
 
-export type CancellationBlockReason =
-  | 'PAYMENT_PENDING'
-  | 'ALREADY_SHIPPED'
-  | 'ALREADY_DELIVERED'
-  | 'ALREADY_CANCELLED'
-  | 'UNKNOWN_STATUS';
+export const CANCELLATION_BLOCK_REASONS = [
+  'PAYMENT_PENDING',
+  'ALREADY_SHIPPED',
+  'ALREADY_DELIVERED',
+  'ALREADY_CANCELLED',
+  'UNKNOWN_STATUS',
+] as const;
+
+export type CancellationBlockReason = (typeof CANCELLATION_BLOCK_REASONS)[number];
 
 export type CancellationEligibility =
   | { readonly eligible: true }
@@ -106,6 +109,8 @@ export function cancelOrder(order: Order, now: Date, reason: string | null): Can
       cancelledAt: now,
       updatedAt: now,
       cancellationReason: reason,
+      // Pedido cancelado não tem mais previsão de entrega (evita informar uma data inválida).
+      estimatedDeliveryDate: null,
     },
   };
 }

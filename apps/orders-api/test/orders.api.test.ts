@@ -87,7 +87,7 @@ describe('POST /v1/customers/lookup', () => {
     const res = await api().post('/v1/customers/lookup').send(body);
     expect(res.status).toBe(400);
     const problem = ValidationProblemSchema.parse(res.body);
-    expect(problem.errors.map((e) => e.path)).toContain(path);
+    expect(problem.errors?.map((e) => e.path)).toContain(path);
   });
 
   it('responde 400 para JSON malformado', async () => {
@@ -171,7 +171,7 @@ describe('GET /v1/customers/:customerId/orders/:orderId', () => {
   ])('rejeita orderId inválido (%s)', async (orderId, path) => {
     const res = await api().get(`/v1/customers/${ANA}/orders/${orderId}`);
     expect(res.status).toBe(400);
-    expect(ValidationProblemSchema.parse(res.body).errors[0]?.path).toBe(path);
+    expect(ValidationProblemSchema.parse(res.body).errors?.[0]?.path).toBe(path);
   });
 
   it('rejeita customerId que não é UUID', async () => {

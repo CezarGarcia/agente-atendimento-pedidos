@@ -1,4 +1,4 @@
-import type { Kysely, Selectable, Transaction } from 'kysely';
+import { sql, type Kysely, type Selectable, type Transaction } from 'kysely';
 
 import type {
   CustomersRepository,
@@ -12,6 +12,8 @@ import type { Database, OrdersTable } from './database.js';
 import { outcomeToStored, rowToOrder, storedToOutcome } from './order-mapper.js';
 
 type Executor = Kysely<Database> | Transaction<Database>;
+
+export const IDEMPOTENCY_TTL = '24 hours';
 
 async function loadItems(executor: Executor, orderIds: readonly string[]) {
   if (orderIds.length === 0) return [];
@@ -104,6 +106,7 @@ export function createPostgresRepositories(db: Kysely<Database>): {
             status: order.status,
             cancelled_at: order.cancelledAt,
             cancellation_reason: order.cancellationReason,
+            estimated_delivery_date: order.estimatedDeliveryDate,
             updated_at: order.updatedAt,
           })
           .where('id', '=', order.id)
@@ -129,6 +132,13 @@ export function createPostgresRepositories(db: Kysely<Database>): {
 
     idempotency: {
       async claim(customerId, key, fingerprint): Promise<IdempotencyClaim> {
+        // Chaves valem por IDEMPOTENCY_TTL; depois disso a mesma chave inicia uma nova tentativa.
+        await trx
+          .deleteFrom('idempotency_keys')
+          .where('customer_id', '=', customerId)
+          .where('key', '=', key)
+          .where('created_at', '<', sql<Date>`now() - ${IDEMPOTENCY_TTL}::interval`)
+          .execute();
         // Se outra transação já inseriu a mesma chave e ainda não terminou, o INSERT espera
         // por ela. Ao terminar, o ON CONFLICT faz este INSERT não inserir nada e lemos o
         // resultado gravado pela primeira.
@@ -167,7 +177,13 @@ export function createPostgresRepositories(db: Kysely<Database>): {
   });
 
   const unitOfWork: UnitOfWork = {
-    transaction: (work) => db.transaction().execute((trx) => work(scopeFor(trx))),
+    transaction: (work) =>
+      db.transaction().execute(async (trx) => {
+        // Não espera indefinidamente pelo bloqueio de um pedido: após 3s falha com 55P03,
+        // que a API responde como 503 (pode ser repetido) em vez de segurar a conexão.
+        await sql`SET LOCAL lock_timeout = '3s'`.execute(trx);
+        return work(scopeFor(trx));
+      }),
   };
 
   return { customers, orders, unitOfWork };

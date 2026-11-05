@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import { pseudonymize, type Logger } from '@agente/shared';
+import { pseudonymize, redactPii, type Logger } from '@agente/shared';
 
 import { cancelOrder, type Customer, type Order } from '../domain/order.js';
 import type {
@@ -78,9 +78,12 @@ export class OrdersService {
    * pedido nunca cancelam duas vezes, e repetições com a mesma Idempotency-Key recebem a
    * mesma resposta.
    */
-  async requestCancellation(
-    command: RequestCancellationCommand,
-  ): Promise<RequestCancellationResult> {
+  async requestCancellation(input: RequestCancellationCommand): Promise<RequestCancellationResult> {
+    // O motivo é texto livre do cliente: dados pessoais digitados nele não são persistidos.
+    const command = {
+      ...input,
+      reason: input.reason === null ? null : redactPii(input.reason).text,
+    };
     const logContext = {
       orderId: command.orderId,
       customerRef: this.customerRef(command.customerId),
