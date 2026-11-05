@@ -4,16 +4,35 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3001),
   DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
-  /** Chaves aceitas, separadas por vírgula (permite rotação sem indisponibilidade). */
+  /**
+   * Chaves aceitas no formato `cliente:segredo`, separadas por vírgula. O nome do cliente vai
+   * para a trilha de auditoria; várias chaves permitem rotação sem indisponibilidade.
+   */
   ORDERS_API_KEYS: z
     .string()
     .transform((value) =>
       value
         .split(',')
-        .map((key) => key.trim())
-        .filter(Boolean),
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const separator = entry.indexOf(':');
+          return {
+            clientName: entry.slice(0, Math.max(separator, 0)),
+            key: entry.slice(separator + 1),
+          };
+        }),
     )
-    .pipe(z.array(z.string().min(16, 'cada chave precisa ter ao menos 16 caracteres')).min(1)),
+    .pipe(
+      z
+        .array(
+          z.object({
+            clientName: z.string().regex(/^[a-z][a-z0-9-]{1,40}$/, 'use o formato cliente:segredo'),
+            key: z.string().min(16, 'o segredo de cada chave precisa ter ao menos 16 caracteres'),
+          }),
+        )
+        .min(1),
+    ),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   LOG_PRETTY: z.stringbool().default(false),
   LOG_PSEUDONYM_SECRET: z.string().min(16),
@@ -25,6 +44,9 @@ const EnvSchema = z.object({
 });
 
 export type Config = z.infer<typeof EnvSchema>;
+
+/** Valores padrão do docker-compose local: proibidos quando NODE_ENV=production. */
+const DEV_SECRET_MARKER = /change-me/i;
 
 export class ConfigError extends Error {
   override readonly name = 'ConfigError';
@@ -39,8 +61,15 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       .join('; ');
     throw new ConfigError(`Configuração inválida: ${problems}`);
   }
-  if (parsed.data.NODE_ENV === 'production' && parsed.data.DEMO_MODE) {
-    throw new ConfigError('DEMO_MODE não pode ser habilitado em produção');
+  const config = parsed.data;
+  if (config.NODE_ENV === 'production') {
+    if (config.DEMO_MODE) throw new ConfigError('DEMO_MODE não pode ser habilitado em produção');
+    const usesDevSecret =
+      config.ORDERS_API_KEYS.some(({ key }) => DEV_SECRET_MARKER.test(key)) ||
+      DEV_SECRET_MARKER.test(config.LOG_PSEUDONYM_SECRET);
+    if (usesDevSecret) {
+      throw new ConfigError('Segredos de desenvolvimento (change-me) não são aceitos em produção');
+    }
   }
-  return parsed.data;
+  return config;
 }

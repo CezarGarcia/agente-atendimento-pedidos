@@ -16,17 +16,38 @@ describe('loadConfig', () => {
       MIGRATE_ON_START: true,
       SEED_ON_START: false,
       DEMO_MODE: false,
-      ORDERS_API_KEYS: ['agent-service:dev-agent-key-change-me'],
+      ORDERS_API_KEYS: [{ clientName: 'agent-service', key: 'dev-agent-key-change-me' }],
     });
   });
 
   it('falha rápido listando as variáveis inválidas, sem expor valores', () => {
     const attempt = () =>
-      loadConfig({ ...valid, DATABASE_URL: 'mysql://segredo@host/db', ORDERS_API_KEYS: 'curta' });
+      loadConfig({ ...valid, DATABASE_URL: 'mysql://topsecret@host/db', ORDERS_API_KEYS: 'curta' });
     expect(attempt).toThrow(ConfigError);
     expect(attempt).toThrow(/DATABASE_URL/);
     expect(attempt).toThrow(/ORDERS_API_KEYS/);
-    expect(attempt).not.toThrow(/segredo/);
+    expect(attempt).not.toThrow(/topsecret/);
+  });
+
+  it('valida o segredo de cada chave, e não a entrada inteira', () => {
+    expect(() =>
+      loadConfig({ ...valid, ORDERS_API_KEYS: 'agent-service-with-long-name:ab' }),
+    ).toThrow(/16 caracteres/);
+    expect(() => loadConfig({ ...valid, ORDERS_API_KEYS: 'segredo-sem-nome-de-cliente' })).toThrow(
+      /cliente:segredo/,
+    );
+  });
+
+  it('recusa segredos de desenvolvimento em produção', () => {
+    expect(() => loadConfig({ ...valid, NODE_ENV: 'production' })).toThrow(/change-me/);
+    expect(
+      loadConfig({
+        ...valid,
+        NODE_ENV: 'production',
+        ORDERS_API_KEYS: 'agent-service:3f9c1d7e8a2b4c6d9e0f1a2b',
+        LOG_PSEUDONYM_SECRET: '7a1e9c3b5d2f4e6a8c0b',
+      }).NODE_ENV,
+    ).toBe('production');
   });
 
   it('impede habilitar rotas de demonstração em produção', () => {

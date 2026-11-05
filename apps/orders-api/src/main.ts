@@ -5,7 +5,6 @@ import { createLogger } from '@agente/shared';
 import { OrdersService } from './application/orders-service.js';
 import { loadConfig } from './config.js';
 import { createApp } from './http/app.js';
-import { parseApiKeys } from './http/middlewares.js';
 import { createDatabase } from './infra/database.js';
 import { migrateToLatest } from './infra/migrator.js';
 import { createPostgresRepositories } from './infra/postgres-repositories.js';
@@ -18,7 +17,7 @@ async function main(): Promise<void> {
     level: config.LOG_LEVEL,
     pretty: config.LOG_PRETTY,
   });
-  const db = createDatabase(config.DATABASE_URL);
+  const db = createDatabase(config.DATABASE_URL, { logger });
 
   if (config.MIGRATE_ON_START) await migrateToLatest(db, logger);
   if (config.SEED_ON_START && (await seedIfEmpty(db))) {
@@ -36,14 +35,18 @@ async function main(): Promise<void> {
   const app = createApp({
     service,
     logger,
-    apiKeys: parseApiKeys(config.ORDERS_API_KEYS),
+    apiKeys: config.ORDERS_API_KEYS,
     rateLimitPerMinute: config.RATE_LIMIT_PER_MINUTE,
     checkDatabase: async () => {
       await sql`select 1`.execute(db);
     },
   });
 
-  const server = app.listen(config.PORT, () => {
+  const server = app.listen(config.PORT, (error?: Error) => {
+    if (error) {
+      logger.fatal({ event: 'server.listen_failed', err: error }, 'falha ao abrir a porta');
+      process.exit(1);
+    }
     logger.info({ event: 'server.started', port: config.PORT }, 'API de pedidos no ar');
   });
 
