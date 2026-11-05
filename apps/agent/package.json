@@ -1,0 +1,16 @@
+{
+  "name": "@agente/agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Serviço do agente de atendimento: canal de mensagens, modelo de IA, guardrails e integrações.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "build": "tsup",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "tsup": "9.0.0"
+  }
+}
