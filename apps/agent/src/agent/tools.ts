@@ -462,15 +462,22 @@ function summarizeOrder(order: ApiOrder, products: ReadonlyMap<number, CatalogLo
   const title = lookup?.status === 'found' ? lookup.product.title : null;
   // Título do catálogo externo: vai entre aspas (é dado, não instrução) e sem aspas internas.
   const cleanTitle = title?.replace(/["“”]/g, '') ?? null;
-  const shortTitle =
-    cleanTitle && cleanTitle.length > 45
-      ? `"${cleanTitle.slice(0, 44).trimEnd()}…"`
-      : cleanTitle && `"${cleanTitle}"`;
+  const shortTitle = cleanTitle && `"${shortenTitle(cleanTitle)}"`;
   const others = order.items.length - 1;
   const items = shortTitle
     ? `${shortTitle}${others > 0 ? ` e mais ${others} ${others === 1 ? 'item' : 'itens'}` : ''}`
     : `${order.items.length} ${order.items.length === 1 ? 'item' : 'itens'}`;
   return `${items}, total ${order.total.formatted}`;
+}
+
+/** Encurta títulos longos no fim de um trecho ("Mochila X, Fits 15 Laptops" → "Mochila X"). */
+function shortenTitle(title: string, max = 45): string {
+  if (title.length <= max) return title;
+  const head = title.slice(0, max);
+  const comma = head.lastIndexOf(',');
+  if (comma >= 15) return head.slice(0, comma);
+  const space = head.lastIndexOf(' ');
+  return `${(space > 15 ? head.slice(0, space) : head).replace(/[\s,.;:-]+$/, '')}…`;
 }
 
 function markCancelled(turn: TurnState, orderId: string): void {
