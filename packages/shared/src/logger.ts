@@ -30,6 +30,18 @@ export const REDACTED_PATHS: readonly string[] = [
   '*.customerName',
 ];
 
+/**
+ * Erros do driver do Postgres trazem `detail`, `where` e parâmetros com valores das linhas
+ * (que podem conter dados pessoais). O log mantém tipo, código, mensagem e stack.
+ */
+const SENSITIVE_ERROR_FIELDS = ['detail', 'where', 'parameters', 'query', 'internalQuery', 'hint'];
+
+function safeErrorSerializer(error: Error): Record<string, unknown> {
+  const serialized = pino.stdSerializers.err(error) as unknown as Record<string, unknown>;
+  for (const field of SENSITIVE_ERROR_FIELDS) Reflect.deleteProperty(serialized, field);
+  return serialized;
+}
+
 export interface CreateLoggerOptions {
   service: string;
   level?: string;
@@ -49,7 +61,7 @@ export function createLogger(options: CreateLoggerOptions): Logger {
       level: (label) => ({ level: label }),
     },
     redact: { paths: [...REDACTED_PATHS], censor: '[REDACTED]' },
-    serializers: { err: pino.stdSerializers.err },
+    serializers: { err: safeErrorSerializer },
     mixin() {
       const context = getContext();
       return context ? { correlationId: context.correlationId, ...context.fields } : {};

@@ -4,13 +4,16 @@ import { redactPii } from '@agente/shared';
  * Guardrail de saída: confere a resposta do modelo ANTES de enviá-la ao cliente.
  *
  * O ponto central é a regra 5 ("só informar que cancelou se a API retornou sucesso"):
- * afirmações de cancelamento só passam se a API principal confirmou, nesta conversa, que
- * aquele pedido está cancelado. O modelo pode errar; a verificação não depende dele.
+ * qualquer afirmação de cancelamento só passa se a API principal confirmou, nesta conversa, que
+ * aquele pedido está cancelado. A lista de padrões é deliberadamente ampla: um falso positivo
+ * custa uma resposta genérica; um falso negativo custa uma informação errada ao cliente.
  */
 
 export interface OutputGuardContext {
-  /** Pedidos que a API principal confirmou estarem cancelados (consulta ou cancelamento). */
+  /** Pedidos que a API principal mostrou cancelados nesta conversa (consulta ou cancelamento). */
   readonly verifiedCancelledOrderIds: ReadonlySet<string>;
+  /** Subconjunto verificado no turno atual (aceita afirmações que não citam o número). */
+  readonly verifiedThisTurn: ReadonlySet<string>;
   readonly handoffCreated: boolean;
   /** Marcador secreto presente no prompt: se aparecer na resposta, houve vazamento. */
   readonly canary: string;
@@ -23,6 +26,7 @@ export type OutputGuardReason =
   | 'unverified_handoff_claim'
   | 'refund_promise'
   | 'pii_redacted'
+  | 'link_removed'
   | 'too_long';
 
 export interface OutputGuardResult {
@@ -40,42 +44,85 @@ const INTERNAL_MARKERS = [
   'uso_das_ferramentas',
   'seguranca_e_limites',
   'estilo_de_comunicacao',
+  'aviso_do_sistema',
 ];
 
+/** Qualquer menção a algo "cancelado"/"cancelamento concluído" é tratada como afirmação. */
 const CANCELLATION_CLAIMS = [
-  /\b(foi|foram|esta|estao|ja esta|ja estao|ja foi|ja foram|ficou|ficaram|consta como|encontra se)\s+(devidamente\s+|com sucesso\s+|oficialmente\s+)?cancelad[oa]s?\b/g,
+  /\bcancelad[oa]s?\b/g,
   /\bcancelei\b/g,
-  /\bcancelamento\s+(do pedido\s+\d{6}\s+)?(foi\s+|esta\s+|ja foi\s+)?(realizado|concluido|efetuado|confirmado|feito|aprovado|processado)\b/g,
-  /\bcancelad[oa]s?\s+com\s+sucesso\b/g,
+  /\bcancelamento\b[^.!?\n]{0,40}\b(realizado|concluido|efetuado|confirmado|feito|aprovado|processado|finalizado)\b/g,
+  /\b(was|has been|have been|is|are|got)\s+(successfully\s+)?cancell?ed\b/g,
+  /\bcancell?ed\s+successfully\b/g,
 ];
 
 const HANDOFF_CLAIMS = [
-  /\b(transferi|encaminhei|ja encaminhei|ja transferi)\b/g,
-  /\b(foi|esta sendo|ja foi)\s+(transferid|encaminhad)[oa]\b/g,
+  /\b(transferi|encaminhei)\b/g,
+  /\b(foi|esta sendo|ja foi|ficou)\s+(transferid|encaminhad)[oa]\b/g,
   /\bprotocolo\s+atd\s?\d+/g,
 ];
 
+/** Promessas sobre devolução de dinheiro: o agente não tem acesso nem autonomia sobre isso. */
 const REFUND_PROMISE =
-  /\b(estorno|reembolso|devolucao do valor|dinheiro de volta)\b[^.!?\n]{0,80}\b(\d+\s*(dias?|horas?|uteis)|garantid|imediat|automatic|aprovad|realizad|efetuad|creditad|ja foi)/;
+  /\b(estorno|reembolso|devolucao do (valor|dinheiro)|dinheiro de volta)\b[^.!?\n]{0,60}\b(cai|caira|sera (creditad|devolvid|feit|realizad|estornad|processad)|(ja )?foi (realizad|efetuad|feit|creditad|aprovad|processad|estornad)|em ate \d+|em \d+\s*(dias?|horas?)|\d+\s*dias? uteis|garantid|imediat|automaticamente)/;
 
-const NEGATION_BEFORE = /\b(nao|nem|sem|ainda nao|nunca)\s+(\S+\s+){0,2}$/;
+/** Negação logo antes da afirmação ("não foi cancelado", "ainda não está cancelado"). */
+const NEGATION_BEFORE = /\b(nao|nem|nunca|jamais|not|never)\b(\s+\S+){0,3}\s*$/;
+/** Futuro/hipótese ("será cancelado", "pode ser cancelado", "para ser cancelado"). */
+const HYPOTHETICAL_BEFORE =
+  /\b(sera|seja|for|fosse|seria|caso|se|quer|deseja|gostaria|para|pra|(pode|possa|poderia|vai|deve|precisa|consigo|posso)\s+(ser|ficar)|will be|would be|can be|to be)\b(\s+\S+){0,2}\s*$/;
+
+const URL_PATTERN = /\b(?:https?:\/\/|www\.)\S+/gi;
 
 function normalize(text: string): string {
   return text.normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/-/g, ' ');
 }
 
-function affirmativeMatches(text: string, patterns: readonly RegExp[]): boolean {
-  return patterns.some((pattern) =>
-    [...text.matchAll(pattern)].some(
-      (match) => !NEGATION_BEFORE.test(text.slice(Math.max(0, match.index - 30), match.index)),
+const precededBy = (text: string, index: number, pattern: RegExp): boolean =>
+  pattern.test(text.slice(Math.max(0, index - 45), index));
+
+/** Ocorrências afirmativas: nem negadas nem em tom de futuro/hipótese. */
+function affirmativeMatches(text: string, patterns: readonly RegExp[]): RegExpMatchArray[] {
+  return patterns.flatMap((pattern) =>
+    [...text.matchAll(pattern)].filter(
+      (match) =>
+        !precededBy(text, match.index, NEGATION_BEFORE) &&
+        !precededBy(text, match.index, HYPOTHETICAL_BEFORE),
     ),
   );
 }
 
-function cancellationClaimIsVerified(text: string, verified: ReadonlySet<string>): boolean {
-  if (verified.size === 0) return false;
-  const mentioned = [...new Set(text.match(/\b\d{6}\b/g) ?? [])];
-  return mentioned.length === 0 || mentioned.every((id) => verified.has(id));
+const ORDER_ID = /\b\d{6}\b/g;
+
+/**
+ * Pedidos a que uma afirmação se refere: os números na mesma frase, antes da afirmação
+ * ("o pedido 100202 está cancelado e o 100101 segue…" → só 100202); se não houver, os que vêm
+ * depois na frase ("cancelei o pedido 100101").
+ */
+function ordersReferencedBy(text: string, index: number): string[] {
+  const start =
+    Math.max(...['.', '!', '?', '\n', ';'].map((sep) => text.lastIndexOf(sep, index))) + 1;
+  const ends = ['.', '!', '?', '\n', ';']
+    .map((sep) => text.indexOf(sep, index))
+    .filter((i) => i >= 0);
+  const end = ends.length > 0 ? Math.min(...ends) : text.length;
+  const before = text.slice(start, index).match(ORDER_ID) ?? [];
+  return before.length > 0 ? before : (text.slice(index, end).match(ORDER_ID) ?? []);
+}
+
+function cancellationClaimsAreVerified(text: string, context: OutputGuardContext): boolean {
+  return affirmativeMatches(text, CANCELLATION_CLAIMS).every((match) => {
+    const referenced = ordersReferencedBy(text, match.index ?? 0);
+    // Sem número citado, só aceitamos se a confirmação da API aconteceu neste mesmo turno.
+    if (referenced.length === 0) return context.verifiedThisTurn.size > 0;
+    return referenced.every((id) => context.verifiedCancelledOrderIds.has(id));
+  });
+}
+
+function hasRefundPromise(text: string): boolean {
+  return text
+    .split(/[.!?\n]+/)
+    .some((sentence) => !/\b(nao|nem|nunca)\b/.test(sentence) && REFUND_PROMISE.test(sentence));
 }
 
 /** Ajustes de formato para mensagens de texto (WhatsApp/SMS). */
@@ -117,19 +164,19 @@ export function guardOutput(raw: string, context: OutputGuardContext): OutputGua
   ) {
     return blocked('prompt_leak');
   }
-  if (
-    affirmativeMatches(normalized, CANCELLATION_CLAIMS) &&
-    !cancellationClaimIsVerified(normalized, context.verifiedCancelledOrderIds)
-  ) {
+  if (!cancellationClaimsAreVerified(normalized, context)) {
     return blocked('unverified_cancellation_claim');
   }
-  if (!context.handoffCreated && affirmativeMatches(normalized, HANDOFF_CLAIMS)) {
+  if (!context.handoffCreated && affirmativeMatches(normalized, HANDOFF_CLAIMS).length > 0) {
     return blocked('unverified_handoff_claim');
   }
-  if (REFUND_PROMISE.test(normalized)) return blocked('refund_promise');
+  if (hasRefundPromise(normalized)) return blocked('refund_promise');
 
   const reasons: OutputGuardReason[] = [];
-  const pii = redactPii(formatted);
+  // O agente não envia links: um link na resposta só pode ter vindo de dado externo (phishing).
+  const withoutLinks = formatted.replace(URL_PATTERN, '[link removido]');
+  if (withoutLinks !== formatted) reasons.push('link_removed');
+  const pii = redactPii(withoutLinks);
   if (pii.detected.length > 0) reasons.push('pii_redacted');
   const text = truncate(pii.text);
   if (text !== pii.text) reasons.push('too_long');

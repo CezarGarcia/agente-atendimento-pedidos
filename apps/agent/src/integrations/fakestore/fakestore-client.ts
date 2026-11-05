@@ -53,6 +53,7 @@ const FakeStoreProductSchema = z.object({
 });
 
 const LIMITS = { title: 120, category: 60, description: 280 } as const;
+const URL_PATTERN = /\b(?:https?:\/\/|www\.)\S+/gi;
 const MAX_BODY_BYTES = 64 * 1024;
 
 export interface FakeStoreClientOptions {
@@ -249,32 +250,36 @@ export class FakeStoreClient implements CatalogClient {
   }
 
   private toProduct(raw: z.infer<typeof FakeStoreProductSchema>): CatalogProduct {
-    const title = sanitizeUntrustedText(raw.title, LIMITS.title);
-    const category = sanitizeUntrustedText(raw.category, LIMITS.category);
-    let description: string | null = sanitizeUntrustedText(raw.description, LIMITS.description);
+    // Links e contatos em dado externo não têm utilidade no atendimento e são vetor de phishing.
+    const clean = (value: string, limit: number) =>
+      sanitizeUntrustedText(value.replace(URL_PATTERN, ' '), limit);
+    const suspicious = (value: string) =>
+      assessInjection(value, { includeActionCoercion: true }).suspicious;
 
-    const assessment = assessInjection(`${title} ${category} ${description}`, {
-      includeActionCoercion: true,
-    });
-    if (assessment.suspicious) {
+    const title = clean(raw.title, LIMITS.title);
+    const category = clean(raw.category, LIMITS.category);
+    const description = clean(raw.description, LIMITS.description);
+
+    const flagged = [title, category, description].some(suspicious);
+    if (flagged) {
       this.options.logger.warn(
         {
           event: 'external.fakestore.suspicious_content',
           productId: raw.id,
-          signals: assessment.signals,
+          signals: assessInjection(`${title} ${category} ${description}`, {
+            includeActionCoercion: true,
+          }).signals,
         },
-        'conteúdo do catálogo parece conter instruções; descrição omitida',
+        'conteúdo do catálogo parece conter instruções; campos suspeitos foram descartados',
       );
-      description = null;
     }
 
     return {
       id: raw.id,
-      title: assessInjection(title, { includeActionCoercion: true }).suspicious
-        ? `Produto ${raw.id}`
-        : title,
-      category,
-      description: description === '' ? null : description,
+      title: suspicious(title) ? `Produto ${String(raw.id)}` : title,
+      category: suspicious(category) ? 'não informada' : category,
+      // Com qualquer sinal de instrução, a descrição (campo mais longo e livre) é descartada.
+      description: flagged || description === '' ? null : description,
       imageUrl: raw.image?.startsWith('https://') ? raw.image : null,
     };
   }
