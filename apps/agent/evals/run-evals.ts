@@ -29,6 +29,7 @@ import {
   type LlmRequest,
   type LlmResponse,
 } from '../src/agent/llm.js';
+import { DEFAULT_MAX_TOKENS, isSupportedModel, SUPPORTED_MODELS } from '../src/agent/models.js';
 import { loadSystemPrompt } from '../src/agent/prompt.js';
 import { ToolExecutor } from '../src/agent/tools.js';
 import type { AgentReply, TurnTrace } from '../src/agent/types.js';
@@ -56,6 +57,14 @@ const { values: args } = parseArgs({
 });
 
 const MODELS = args.models.split(',').map((m) => m.trim());
+for (const model of [...MODELS, ...(args.judge ? [args.judge] : [])]) {
+  if (!isSupportedModel(model)) {
+    process.stderr.write(
+      `Modelo não suportado: ${model}. Use um destes: ${SUPPORTED_MODELS.join(', ')}.\n`,
+    );
+    process.exit(1);
+  }
+}
 const RUNS = Number(args.runs);
 const EFFORT = args.effort as 'low' | 'medium' | 'high';
 const OUT_DIR = args.out;
@@ -189,7 +198,7 @@ async function runScenario(scenario: Scenario, model: string, run: number): Prom
     new AnthropicLlmClient({
       model,
       effort: EFFORT,
-      maxTokens: 2_048,
+      maxTokens: DEFAULT_MAX_TOKENS,
       timeoutMs: 60_000,
       maxRetries: 3,
       ...(args['base-url'] ? { baseURL: args['base-url'], apiKey: 'stub' } : {}),
@@ -354,7 +363,7 @@ async function judge(result: RunResult, judgeModel: string): Promise<RunResult['
     .join('\n');
   const response = await client.messages.parse({
     model: judgeModel,
-    max_tokens: 2_048,
+    max_tokens: DEFAULT_MAX_TOKENS,
     system:
       'Você avalia respostas de um assistente de atendimento de uma loja, por mensagem de texto, em ' +
       'português. Avalie somente pelo critério dado. Nota 5 = atende plenamente; 4 = atende com ' +

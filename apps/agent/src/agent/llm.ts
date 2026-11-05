@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 
+import { isSupportedModel, type SupportedModel } from './models.js';
+
 /**
  * Porta para o modelo de IA. O orquestrador depende só desta interface: nos testes, um modelo
  * roteirizado substitui o real e torna os cenários (inclusive os de falha) determinísticos.
@@ -53,15 +55,15 @@ export interface LlmClient {
 }
 
 /** Preço por milhão de tokens (USD), para estimar o custo de cada turno nos logs e no trace. */
-const PRICING: Readonly<Record<string, { input: number; output: number }>> = {
+const PRICING: Readonly<Record<SupportedModel, { input: number; output: number }>> = {
   'claude-haiku-5-5': { input: 0.1, output: 0.5 },
   'claude-sonnet-5-5': { input: 2, output: 10 },
   'claude-opus-5-5': { input: 4, output: 20 },
 };
 
 export function estimateCostUsd(model: string, usage: LlmUsage): number {
+  if (!isSupportedModel(model)) return 0;
   const price = PRICING[model];
-  if (!price) return 0;
   const inputCost =
     usage.inputTokens * price.input +
     usage.cacheWriteTokens * price.input * 1.25 +

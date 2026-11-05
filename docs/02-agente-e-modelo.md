@@ -2,13 +2,13 @@
 
 ## 1. Modelo utilizado
 
-| Item                | Valor                                                                                                            |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| Modelo              | **Claude Haiku 5.5** (`claude-haiku-5-5`), da Anthropic, configurável por `LLM_MODEL`                            |
-| Integração          | SDK oficial `@anthropic-ai/sdk`, Messages API, laço de ferramentas implementado no serviço                       |
-| Raciocínio          | Adaptativo (padrão do modelo), com `effort` configurável (`LLM_EFFORT`, padrão `low` para latência de chat)      |
-| Saída               | Texto livre para o cliente; argumentos de ferramenta com `strict: true` (schema garantido) e revalidados com Zod |
-| Custo de referência | US$ 0,10 / milhão de tokens de entrada e US$ 0,50 / milhão de saída; leitura de cache a 10% da entrada           |
+| Item                | Valor                                                                                                                      |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Modelo              | **Claude Haiku 5.5** (`claude-haiku-5-5`), da Anthropic. `LLM_MODEL` aceita também `claude-sonnet-5-5` e `claude-opus-5-5` |
+| Integração          | SDK oficial `@anthropic-ai/sdk`, Messages API, laço de ferramentas implementado no serviço                                 |
+| Raciocínio          | Adaptativo (padrão do modelo), com `effort` configurável (`LLM_EFFORT`, padrão `low` para latência de chat)                |
+| Saída               | Texto livre para o cliente; argumentos de ferramenta com `strict: true` (schema garantido) e revalidados com Zod           |
+| Custo de referência | US$ 0,10 / milhão de tokens de entrada e US$ 0,50 / milhão de saída; leitura de cache a 10% da entrada                     |
 
 **Por que o Haiku 5.5.** O domínio é estreito (duas operações) e as regras críticas não dependem
 do modelo, porque são impostas por código. Nesse cenário, um modelo rápido e barato é suficiente

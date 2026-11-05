@@ -33,7 +33,10 @@ As garantias não dependem da capacidade do modelo.
 **Decisão.** `claude-haiku-5-5` com `effort: low`, configurável por variável de ambiente.
 **Validação.** A suíte de evals compara modelos em acerto, latência e custo
 (`--models claude-haiku-5-5,claude-sonnet-5-5`). Se o Haiku falhar em cenários de red team ou de
-condução da conversa, trocar o modelo é uma variável de ambiente.
+condução da conversa, trocar o modelo é uma variável de ambiente. A configuração aceita só os
+modelos que suportam tudo o que a requisição usa (mensagens de sistema no meio da conversa,
+`effort`, ferramentas `strict`): `claude-haiku-5-5`, `claude-sonnet-5-5` e `claude-opus-5-5`. Um
+modelo sem esse suporte (o `claude-sonnet-5`, por exemplo) teria toda chamada recusada.
 
 ### D4. Identidade vem do canal, e a API é escopada por cliente
 

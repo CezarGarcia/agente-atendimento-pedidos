@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { DEFAULT_MAX_TOKENS, SUPPORTED_MODELS } from './agent/models.js';
+
 const secret = z.string().min(16, 'precisa ter ao menos 16 caracteres');
 
 /** Variável definida como string vazia (comum no docker-compose) conta como ausente. */
@@ -19,9 +21,9 @@ const EnvSchema = z.object({
   ANTHROPIC_API_KEY: optional(z.string()),
   /** Permite apontar para um servidor fake nos testes E2E. */
   ANTHROPIC_BASE_URL: optional(z.url()),
-  LLM_MODEL: z.string().default('claude-haiku-5-5'),
+  LLM_MODEL: z.enum(SUPPORTED_MODELS).default('claude-haiku-5-5'),
   LLM_EFFORT: z.enum(['low', 'medium', 'high']).default('low'),
-  LLM_MAX_TOKENS: z.coerce.number().int().min(256).max(16_000).default(2_048),
+  LLM_MAX_TOKENS: z.coerce.number().int().min(1_024).max(16_000).default(DEFAULT_MAX_TOKENS),
   LLM_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
   LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
 

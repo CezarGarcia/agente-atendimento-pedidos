@@ -153,7 +153,7 @@ desenvolvimento: com `NODE_ENV=production`, os serviços **recusam** segredos `c
 | Variável                    | Padrão                     | Para quê                                                   |
 | --------------------------- | -------------------------- | ---------------------------------------------------------- |
 | `ANTHROPIC_API_KEY`         | —                          | Chave da API da Anthropic (sem ela, o agente sobe e avisa) |
-| `LLM_MODEL` / `LLM_EFFORT`  | `claude-haiku-5-5` / `low` | Modelo e nível de raciocínio                               |
+| `LLM_MODEL` / `LLM_EFFORT`  | `claude-haiku-5-5` / `low` | Modelo (Haiku, Sonnet ou Opus 5.5) e nível de raciocínio   |
 | `FAKESTORE_BASE_URL`        | `https://fakestoreapi.com` | Catálogo externo                                           |
 | `CONFIRMATION_TTL_MINUTES`  | `10`                       | Validade da confirmação de cancelamento                    |
 | `CONVERSATION_IDLE_MINUTES` | `30`                       | Inatividade que encerra a conversa                         |
