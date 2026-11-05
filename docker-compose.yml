@@ -35,10 +35,41 @@ services:
       LOG_PSEUDONYM_SECRET: ${LOG_PSEUDONYM_SECRET:-dev-pseudonym-secret-change-me}
       MIGRATE_ON_START: 'true'
       SEED_ON_START: 'true'
+      # Rotas /internal/demo (recriar dados, despachar pedido) usadas pelo simulador.
+      DEMO_MODE: 'true'
     ports:
       - '${ORDERS_API_PORT:-3001}:3001'
     depends_on:
       postgres:
+        condition: service_healthy
+
+  agent:
+    build:
+      context: .
+      dockerfile: apps/agent/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      DATABASE_URL: postgres://agent_app:${AGENT_DB_PASSWORD:-agent_dev_only}@postgres:5432/agent
+      ORDERS_API_URL: http://orders-api:3001
+      ORDERS_API_KEY: ${AGENT_ORDERS_API_KEY:-dev-agent-key-change-me}
+      FAKESTORE_BASE_URL: ${FAKESTORE_BASE_URL:-https://fakestoreapi.com}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-claude-haiku-5-5}
+      LLM_EFFORT: ${LLM_EFFORT:-low}
+      CHANNEL_WEBHOOK_SECRET: ${CHANNEL_WEBHOOK_SECRET:-dev-webhook-secret-change-me}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PSEUDONYM_SECRET: ${LOG_PSEUDONYM_SECRET:-dev-pseudonym-secret-change-me}
+      DEMO_MODE: 'true'
+      SIMULATOR_DIST_DIR: /app/simulator
+    ports:
+      - '${AGENT_PORT:-3002}:3002'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      orders-api:
         condition: service_healthy
 
 volumes:
