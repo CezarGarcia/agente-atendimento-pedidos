@@ -5,7 +5,9 @@ import { createLogger } from '@agente/shared';
 import { OrdersService } from './application/orders-service.js';
 import { loadConfig } from './config.js';
 import { createApp } from './http/app.js';
+import { demoRouter } from './http/routes/demo.js';
 import { createDatabase } from './infra/database.js';
+import { createDemoOperations } from './infra/demo.js';
 import { migrateToLatest } from './infra/migrator.js';
 import { createPostgresRepositories } from './infra/postgres-repositories.js';
 import { seedIfEmpty } from './infra/seed.js';
@@ -40,7 +42,21 @@ async function main(): Promise<void> {
     checkDatabase: async () => {
       await sql`select 1`.execute(db);
     },
+    extraRouters: config.DEMO_MODE
+      ? [
+          {
+            path: '/internal/demo',
+            router: demoRouter(createDemoOperations(db), config.ORDERS_API_KEYS),
+          },
+        ]
+      : [],
   });
+  if (config.DEMO_MODE) {
+    logger.warn(
+      { event: 'server.demo_mode' },
+      'rotas de demonstração habilitadas (/internal/demo)',
+    );
+  }
 
   const server = app.listen(config.PORT, (error?: Error) => {
     if (error) {

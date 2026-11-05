@@ -19,11 +19,14 @@
     "tsup": "9.0.0"
   },
   "dependencies": {
+    "@agente/shared": "0.1.0",
     "@anthropic-ai/sdk": "1.6.0",
     "express": "5.3.0",
     "express-rate-limit": "8.7.3",
     "helmet": "8.3.0",
     "kysely": "0.29.8",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "pino": "10.4.0",
+    "zod": "4.6.7"
   }
 }

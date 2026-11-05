@@ -155,6 +155,8 @@ describe('OrdersApiClient — transporte', () => {
   it('codifica identificadores na URL', async () => {
     const { api, fetchFn } = client(() => json({ code: 'ORDER_NOT_FOUND' }, 404));
     await api.getOrder('../admin', '100101');
-    expect((fetchFn.mock.calls[0]?.[0] as URL).toString()).toContain('/v1/customers/..%2Fadmin/orders/100101');
+    expect((fetchFn.mock.calls[0]?.[0] as URL).toString()).toContain(
+      '/v1/customers/..%2Fadmin/orders/100101',
+    );
   });
 });
