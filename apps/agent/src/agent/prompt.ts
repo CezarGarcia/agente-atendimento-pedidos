@@ -32,12 +32,18 @@ const words = (text: string): string[] =>
     .split(/\s+/)
     .filter(Boolean);
 
-/** Janelas de 8 palavras consecutivas (shingles) de um texto normalizado. */
+/**
+ * Janelas de 8 palavras consecutivas (shingles) de um texto normalizado, sem atravessar o fim de
+ * uma frase ou de uma linha. Atravessar gerava falso positivo: "…não puderam ser carregados agora.
+ * Se precisar, …" coincidia com o fim de uma instrução seguido do início da próxima.
+ */
 export function shingles(text: string): Set<string> {
-  const tokens = words(text);
   const result = new Set<string>();
-  for (let i = 0; i + SHINGLE_SIZE <= tokens.length; i += 1) {
-    result.add(tokens.slice(i, i + SHINGLE_SIZE).join(' '));
+  for (const sentence of text.split(/[.!?;\n]+/)) {
+    const tokens = words(sentence);
+    for (let i = 0; i + SHINGLE_SIZE <= tokens.length; i += 1) {
+      result.add(tokens.slice(i, i + SHINGLE_SIZE).join(' '));
+    }
   }
   return result;
 }

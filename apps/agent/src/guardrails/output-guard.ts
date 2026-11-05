@@ -45,6 +45,14 @@ export interface OutputGuardResult {
 
 export const MAX_OUTPUT_LENGTH = 1_000;
 
+/**
+ * Janelas de 8 palavras das instruções que precisam aparecer na resposta para caracterizar
+ * vazamento. Vazar instruções reproduz trechos longos (várias janelas); uma única coincidência de
+ * 8 palavras costuma ser o modelo usando uma expressão que as próprias instruções sugerem (visto
+ * nos evals: "use o botão Sim, cancelar da mensagem anterior").
+ */
+const MIN_PROMPT_SHINGLES = 2;
+
 const INTERNAL_MARKERS = [
   'regras_de_negocio',
   'protocolo_de_cancelamento',
@@ -87,11 +95,29 @@ const HANDOFF_CLAIMS = [
 const REFUND_PROMISE =
   /\b(estorno|reembolso|devolucao do (valor|dinheiro)|dinheiro de volta)\b[^.!?\n]{0,60}\b(cai|caira|sera (creditad|devolvid|feit|realizad|estornad|processad)|(ja )?foi (realizad|efetuad|feit|creditad|aprovad|processad|estornad)|em ate \d+|em \d+\s*(dias?|horas?)|\d+\s*dias? uteis|garantid|imediat|automaticamente)/;
 
-/** Negação logo antes da afirmação ("não foi cancelado", "ainda não está cancelado"). */
-const NEGATION_BEFORE = /\b(nao|nem|nunca|jamais|not|never)\b(\s+\S+){0,3}\s*$/;
+/*
+ * O alcance da negação e da hipótese não atravessa pontuação: em "Não se preocupe, foi cancelado"
+ * e "Pra constar: foi cancelado" a afirmação está fora do alcance e precisa ser verificada.
+ */
+const WORD = String.raw`\s+[^\s,;:!?.]+`;
+/** Negação logo antes ("não foi cancelado", "nada foi cancelado", "nenhum pedido foi cancelado"). */
+const NEGATION_BEFORE = new RegExp(
+  String.raw`\b(nao|nem|nunca|jamais|nada|nenhum|nenhuma|not|never|nothing)\b(${WORD}){0,3}\s*$`,
+);
+/** "Não posso dizer que foi cancelado": a afirmação é negada pelo verbo que a introduz. */
+const NEGATED_REPORT_BEFORE = new RegExp(
+  String.raw`\b(nao|nem|nunca)\s+(posso|consigo|vou|devo|podemos|conseguimos|da para|da pra|tenho como)\s+(dizer|afirmar|confirmar|informar|garantir|escrever|responder)\s+que(${WORD}){0,3}\s*$`,
+);
 /** Futuro/hipótese ("será cancelado", "pode ser cancelado", "para ser cancelado"). */
-const HYPOTHETICAL_BEFORE =
-  /\b(sera|seja|for|fosse|seria|caso|se|quer|deseja|gostaria|para|pra|(pode|podem|possa|poderia|vai|vao|deve|devem|precisa|consigo|posso)\s+(ser|ficar)|will be|would be|can be|to be)\b(\s+\S+){0,2}\s*$/;
+const HYPOTHETICAL_BEFORE = new RegExp(
+  String.raw`\b(sera|seja|for|fosse|seria|caso|se|quer|deseja|gostaria|para|pra|(pode|podem|possa|poderia|vai|vao|deve|devem|precisa|consigo|posso)\s+(ser|ficar)|will be|would be|can be|to be)\b(${WORD}){0,2}\s*$`,
+);
+/**
+ * Negação ou modalidade DENTRO do trecho casado ("o cancelamento não pode ser feito", "o
+ * cancelamento ainda não foi concluído", "the cancellation could not be completed").
+ */
+const NEGATION_INSIDE =
+  /\b(nao|nem|nunca|not|never|cannot)\b|\b(pode|podem|possa|poderia|precisa|deve|vai|sera|seria)\s+(ser|ficar|estar)\b|\b(can|could|will|would) be\b/;
 
 const URL_PATTERN = /\b(?:https?:\/\/|www\.)\S+/gi;
 
@@ -102,13 +128,23 @@ function normalize(text: string): string {
 const precededBy = (text: string, index: number, pattern: RegExp): boolean =>
   pattern.test(text.slice(Math.max(0, index - 45), index));
 
-/** Ocorrências afirmativas: nem negadas nem em tom de futuro/hipótese. */
-function affirmativeMatches(text: string, patterns: readonly RegExp[]): RegExpMatchArray[] {
+/**
+ * Ocorrências afirmativas: nem negadas nem em tom de futuro/hipótese. `checkInside` vale para
+ * padrões que casam um trecho ("cancelamento … feito"), não para os que já contêm a negação
+ * como parte da afirmação ("não será mais enviado").
+ */
+function affirmativeMatches(
+  text: string,
+  patterns: readonly RegExp[],
+  { checkInside = false } = {},
+): RegExpMatchArray[] {
   return patterns.flatMap((pattern) =>
     [...text.matchAll(pattern)].filter(
       (match) =>
         !precededBy(text, match.index, NEGATION_BEFORE) &&
-        !precededBy(text, match.index, HYPOTHETICAL_BEFORE),
+        !precededBy(text, match.index, NEGATED_REPORT_BEFORE) &&
+        !precededBy(text, match.index, HYPOTHETICAL_BEFORE) &&
+        !(checkInside && NEGATION_INSIDE.test(match[0])),
     ),
   );
 }
@@ -141,7 +177,8 @@ function cancellationClaimsAreVerified(text: string, context: OutputGuardContext
     const { start, end } = sentenceAround(text, match.index ?? 0);
     return !CONDITIONAL.test(text.slice(start, end));
   });
-  return [...affirmativeMatches(text, CANCELLATION_CLAIMS), ...consequences].every((match) => {
+  const claims = affirmativeMatches(text, CANCELLATION_CLAIMS, { checkInside: true });
+  return [...claims, ...consequences].every((match) => {
     const referenced = ordersReferencedBy(text, match);
     // O modelo nunca executa um cancelamento: uma afirmação sem número só pode se referir a um
     // pedido que ele acabou de consultar individualmente e que a API mostrou cancelado.
@@ -189,9 +226,10 @@ export function guardOutput(raw: string, context: OutputGuardContext): OutputGua
   if (formatted === '') return blocked('empty');
 
   const normalized = normalize(formatted);
-  const reproducesPrompt = [...shingles(formatted)].some((shingle) =>
+  const promptShingles = [...shingles(formatted)].filter((shingle) =>
     context.promptFingerprint?.has(shingle),
   );
+  const reproducesPrompt = promptShingles.length >= MIN_PROMPT_SHINGLES;
   if (
     reproducesPrompt ||
     formatted.includes(context.canary) ||
