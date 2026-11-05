@@ -53,6 +53,7 @@ export const TEMPLATE_LABEL: Record<string, string> = {
   emptyMessage: 'Mensagem vazia',
   rateLimited: 'Limite de mensagens',
   llmUnavailable: 'Modelo indisponível',
+  requestDeclined: 'Modelo recusou a mensagem',
   outputBlocked: 'Resposta bloqueada pelo guardrail',
 };
 

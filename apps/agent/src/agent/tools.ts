@@ -134,6 +134,15 @@ const InputSchemas = {
   }),
 };
 
+/**
+ * O que aconteceu com OUTROS pedidos que o cliente pediu para cancelar no mesmo turno. Se o turno
+ * terminar na pergunta de confirmação (texto fixo), estas notas vão junto: sem elas, quem pede
+ * "cancela o 100101 e o 100102" só ouviria falar do 100101 (visto nos evals).
+ */
+export type CancellationNote =
+  | { readonly orderId: string; readonly kind: 'not_cancellable'; readonly reason: string }
+  | { readonly orderId: string; readonly kind: 'not_found' | 'technical_error' | 'one_at_a_time' };
+
 /** Estado acumulado durante um turno: é o que os guardrails usam para conferir a resposta. */
 export interface TurnState {
   /** Pedidos que a API mostrou cancelados nesta conversa (inclui turnos anteriores). */
@@ -144,6 +153,7 @@ export interface TurnState {
   handoff: HandoffTicket | null;
   /** Confirmação criada neste turno: encerra o turno com a pergunta de confirmação. */
   pendingCreated: PendingAction | null;
+  readonly cancellationNotes: CancellationNote[];
 }
 
 export interface ToolExecutorDependencies {
@@ -303,23 +313,27 @@ export class ToolExecutor {
     reason: string | null,
     turn: TurnState,
   ): Promise<ToolOutcome> {
-    if (turn.pendingCreated) {
-      return failure(
-        'uma_confirmacao_por_vez',
-        'Já existe uma confirmação sendo enviada ao cliente neste turno. Trate um pedido por vez.',
-      );
+    if (turn.pendingCreated?.orderId === orderId) {
+      return { outcome: 'confirmacao_ja_enviada', payload: confirmationSent(turn.pendingCreated) };
     }
 
     // A elegibilidade é antecipada aqui só para orientar a conversa. A regra é decidida de novo
     // pela API no momento da execução.
     const result = await this.deps.orders.getOrder(customerId, orderId);
-    if (result.kind === 'not_found') return orderNotFound();
-    if (result.kind === 'technical_error') return technicalError(result.reason);
+    if (result.kind === 'not_found') {
+      turn.cancellationNotes.push({ orderId, kind: 'not_found' });
+      return orderNotFound();
+    }
+    if (result.kind === 'technical_error') {
+      turn.cancellationNotes.push({ orderId, kind: 'technical_error' });
+      return technicalError(result.reason);
+    }
 
     const { order } = result;
     if (!order.cancellation.eligible) {
       if (order.status === 'CANCELLED') markCancelled(turn, order.id);
       const blockedReason = order.cancellation.blockedReason ?? 'UNKNOWN_STATUS';
+      turn.cancellationNotes.push({ orderId, kind: 'not_cancellable', reason: blockedReason });
       return {
         outcome: `nao_cancelavel:${blockedReason}`,
         payload: {
@@ -332,6 +346,15 @@ export class ToolExecutor {
             'Explique o motivo ao cliente em linguagem simples e ofereça atendimento humano.',
         },
       };
+    }
+
+    if (turn.pendingCreated) {
+      turn.cancellationNotes.push({ orderId, kind: 'one_at_a_time' });
+      return failure(
+        'uma_confirmacao_por_vez',
+        `Já existe uma confirmação sendo enviada ao cliente neste turno (pedido ${turn.pendingCreated.orderId}). ` +
+          `O sistema avisa o cliente que o pedido ${orderId} fica para depois: trate um pedido por vez.`,
+      );
     }
 
     const open = await this.deps.store.findOpenPendingAction(conversation.id);
@@ -354,16 +377,7 @@ export class ToolExecutor {
     await this.deps.store.savePendingAction(action);
     turn.pendingCreated = action;
 
-    return {
-      outcome: 'confirmacao_solicitada',
-      payload: {
-        resultado: 'confirmacao_enviada_ao_cliente',
-        pedido: order.id,
-        orientacao:
-          'O sistema já enviou ao cliente a pergunta de confirmação com botões. O cancelamento só ' +
-          'acontece se ele confirmar. Não escreva outra pergunta de confirmação.',
-      },
-    };
+    return { outcome: 'confirmacao_solicitada', payload: confirmationSent(action) };
   }
 
   private async handoff(
@@ -480,6 +494,24 @@ export function shortenTitle(title: string, max = 45): string {
   if (comma >= 15) return head.slice(0, comma);
   const space = head.lastIndexOf(' ');
   return `${(space > 15 ? head.slice(0, space) : head).replace(/[\s,.;:-]+$/, '')}…`;
+}
+
+/**
+ * A pergunta de confirmação é enviada pelo sistema e fica no histórico como mensagem do assistente.
+ * O resultado diz o que ela contém: sem isso, o modelo via na própria "fala" itens e total que não
+ * tinha consultado e se desculpava por eles (visto nos evals).
+ */
+function confirmationSent(action: PendingAction): ToolPayload {
+  return {
+    resultado: 'confirmacao_enviada_ao_cliente',
+    pedido: action.orderId,
+    resumo_enviado: action.orderSummary,
+    orientacao:
+      'O sistema já enviou ao cliente, em seu nome, a pergunta de confirmação com esse resumo e ' +
+      'botões; ela aparece no histórico como a sua próxima mensagem. O cancelamento só acontece se ' +
+      'o cliente confirmar, tocando no botão ou respondendo SIM logo em seguida. Não escreva outra ' +
+      'pergunta de confirmação.',
+  };
 }
 
 function markCancelled(turn: TurnState, orderId: string): void {

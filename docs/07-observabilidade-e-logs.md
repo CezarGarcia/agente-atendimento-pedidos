@@ -55,6 +55,7 @@ URL real. Há testes que conferem a ausência de PII nos logs (API-25, AG-30, SH
 | agent      | `external.fakestore.request`                                                                | info         | Chamada ao catálogo (resultado, tentativas, estado do circuito)                                |
 | agent      | `external.fakestore.retry` / `.circuit_state` / `.invalid_response` / `.suspicious_content` | warn         | Resiliência e conteúdo suspeito do catálogo                                                    |
 | agent      | `agent.llm_unavailable` / `agent.llm_unexpected_stop` / `agent.max_iterations`              | error / warn | Falhas do modelo                                                                               |
+| agent      | `agent.llm_refusal`                                                                         | warn         | O modelo recusou a mensagem (`stop_reason: refusal`); o cliente recebe uma recusa educada      |
 | agent      | `channel.webhook.invalid_signature`                                                         | warn         | Webhook com assinatura inválida                                                                |
 | agent      | `agent.duplicate_message` / `agent.rate_limited`                                            | info / warn  | Reentrega de webhook; excesso de mensagens                                                     |
 

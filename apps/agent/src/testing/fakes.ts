@@ -83,6 +83,23 @@ export const llm = {
       });
       return response(blocks, 'tool_use');
     },
+  /** Várias chamadas de ferramenta na mesma resposta (chamadas paralelas). */
+  callTools:
+    (calls: readonly { name: string; input: Record<string, unknown> }[]): Step =>
+    () =>
+      response(
+        calls.map(({ name, input }) => {
+          toolUseCounter += 1;
+          return {
+            type: 'tool_use',
+            id: `toolu_${String(toolUseCounter)}`,
+            name,
+            input,
+            caller: { type: 'direct' },
+          } satisfies Anthropic.ContentBlock;
+        }),
+        'tool_use',
+      ),
   stop:
     (stopReason: Anthropic.StopReason): Step =>
     () =>

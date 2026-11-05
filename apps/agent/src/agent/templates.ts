@@ -1,5 +1,6 @@
 import { CONFIRM_PAYLOAD_PREFIX, DECLINE_PAYLOAD_PREFIX } from './confirmation.js';
 import { BLOCK_REASON_LABEL } from './presentation.js';
+import type { CancellationNote } from './tools.js';
 import type { OutgoingMessage, PendingAction } from './types.js';
 
 /**
@@ -10,10 +11,35 @@ import type { OutgoingMessage, PendingAction } from './types.js';
 
 const text = (value: string): OutgoingMessage => ({ text: value });
 
+/** Uma linha sobre outro pedido que o cliente pediu para cancelar no mesmo turno. */
+function describeNote(note: CancellationNote): string {
+  switch (note.kind) {
+    case 'not_cancellable':
+      return note.reason === 'ALREADY_CANCELLED'
+        ? `O pedido *${note.orderId}* já está cancelado.`
+        : `O pedido *${note.orderId}* não pode ser cancelado por aqui: ${BLOCK_REASON_LABEL[note.reason] ?? BLOCK_REASON_LABEL['UNKNOWN_STATUS'] ?? ''}. Um atendente pode ajudar com ele, se precisar.`;
+    case 'not_found':
+      return `Não encontrei o pedido *${note.orderId}*; confira o número, por favor.`;
+    case 'technical_error':
+      return `Não consegui verificar o pedido *${note.orderId}* agora.`;
+    case 'one_at_a_time':
+      return `Confirmo um cancelamento por vez: depois de responder esta pergunta, me peça o do pedido *${note.orderId}*.`;
+  }
+}
+
 export const templates = {
-  confirmCancellation(action: PendingAction): OutgoingMessage {
+  /**
+   * Pergunta de confirmação. `notes` traz o que aconteceu com outros pedidos citados no mesmo turno
+   * (não canceláveis, não encontrados, para depois): sem elas, o cliente só ouviria falar deste.
+   */
+  confirmCancellation(
+    action: PendingAction,
+    notes: readonly CancellationNote[] = [],
+  ): OutgoingMessage {
+    const others = notes.filter((note) => note.orderId !== action.orderId).map(describeNote);
     return {
       text:
+        (others.length > 0 ? `${others.join('\n')}\n\n` : '') +
         `Só para confirmar: você quer *cancelar o pedido ${action.orderId}* (${action.orderSummary})? ` +
         'Essa ação não pode ser desfeita.\n\nResponda *SIM* para cancelar ou *NÃO* para manter o pedido.',
       quickReplies: [
@@ -95,6 +121,13 @@ export const templates = {
     text(
       'Desculpe, estou com uma instabilidade e não consegui processar sua mensagem. Pode tentar de ' +
         'novo em instantes? Se preferir, digite *atendente* para falar com uma pessoa.',
+    ),
+
+  /** O modelo recusou a mensagem (stop_reason "refusal"): não é instabilidade, e não se diz que é. */
+  requestDeclined: () =>
+    text(
+      'Não consigo ajudar com essa mensagem. Por aqui eu consulto seus pedidos e cancelo pedidos em ' +
+        'processamento. Se preferir, digite *atendente* para falar com uma pessoa.',
     ),
 
   outputBlocked: () =>

@@ -157,6 +157,7 @@ export class AgentService {
       toolCalls: trace.toolCalls,
       handoff: null,
       pendingCreated: null,
+      cancellationNotes: [],
     };
 
     let outcome: TurnOutcome;
@@ -568,7 +569,7 @@ export class AgentService {
           return this.closeTurn(
             added,
             'confirmCancellation',
-            templates.confirmCancellation(turn.pendingCreated),
+            templates.confirmCancellation(turn.pendingCreated, turn.cancellationNotes),
             trace,
           );
         }
@@ -605,7 +606,11 @@ export class AgentService {
         return { messages: [{ text: guard.text }], stored: added };
       }
 
-      // max_tokens, refusal, pause_turn…: não há resposta confiável para enviar.
+      if (response.stopReason === 'refusal') {
+        logger.warn({ event: 'agent.llm_refusal' }, 'o modelo recusou a mensagem');
+        return this.closeTurn(added, 'requestDeclined', templates.requestDeclined(), trace);
+      }
+      // max_tokens, pause_turn…: não há resposta confiável para enviar.
       logger.warn(
         { event: 'agent.llm_unexpected_stop', stopReason: response.stopReason },
         'parada inesperada do modelo',
