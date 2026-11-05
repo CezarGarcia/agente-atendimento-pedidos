@@ -49,11 +49,16 @@ export function shingles(text: string): Set<string> {
 }
 
 /**
- * Impressão digital do prompt, sem a seção de exemplos: o modelo pode (e deve) reaproveitar as
- * respostas-modelo dos exemplos, mas nunca reproduzir as instruções.
+ * Seções que o modelo pode reproduzir: os exemplos são respostas-modelo, e o escopo e as regras de
+ * negócio são públicos (explicá-los ao cliente é o trabalho do agente). Nos evals, "Pedidos
+ * aguardando pagamento não podem ser cancelados por este canal" era bloqueado por repetir a regra 1.
+ * O que não pode vazar é o funcionamento: contexto, uso das ferramentas, protocolo, segurança.
  */
+const PUBLIC_SECTIONS = /<(exemplos|escopo|regras_de_negocio)>[\s\S]*?<\/\1>/g;
+
+/** Impressão digital do prompt, sem as seções públicas. */
 export function promptFingerprint(text: string): Set<string> {
-  return shingles(text.replace(/<exemplos>[\s\S]*?<\/exemplos>/g, ' '));
+  return shingles(text.replace(PUBLIC_SECTIONS, ' '));
 }
 
 const CANDIDATE_DIRS = ['../../prompts/', '../prompts/', './prompts/'];
