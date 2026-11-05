@@ -35,11 +35,19 @@ const PATTERNS: Readonly<Record<InjectionSignal, readonly RegExp[]>> = {
     /(^|\n)\s*(system|assistant|sistema|developer)\s*:/,
     /<\/?\s*(system|assistant|instructions?|tool|function)[^>]*>/,
     /\[(inst|system)\]|<<sys>>|###\s*(instruction|system)/,
+    // "SYSTEM NOTE TO ASSISTANT: …", "mensagem para o assistente: …" (visto nos evals).
+    /\b(system|developer|admin|sistema)\s+(note|message|prompt|instruction|override|nota|mensagem|aviso)s?\b/,
+    /\b(note|message|instructions?|nota|mensagem|recado|instruc\w*)\s+(to|for|para)\s+(the\s+|o\s+|a\s+)?(assistant|ai|model|agent|bot|chatbot|assistente|ia|modelo|agente)\b/,
   ],
   action_coercion: [
     /\b(cancel(e|a|ar)?|cancel)\b.{0,30}\b(pedido|order)/,
     /\b(chame|chamar|execute|executar|call|invoke|run)\b.{0,30}\b(ferramenta|tool|funcao|function|api)/,
     /\b(reembolso|estorno|refund)\b.{0,30}\b(imediat|agora|now|aprovad)/,
+    // Em conteúdo externo: ordens dirigidas ao atendimento e afirmações sobre o pedido do cliente.
+    /\b(tell|inform|notify|say to)\s+(the\s+)?(customer|user|client|buyer)\b/,
+    /\b(diga|informe|avise|responda|fale)\s+(ao|a|para o|pro)\s+(cliente|usuario|comprador)\b/,
+    /\b(order|pedido)\b.{0,40}\b(cancell?ed|cancelad[oa]|refunded|estornad[oa]|reembolsad[oa])\b/,
+    /\b(collect|ask for|request|colete|coletar|pe[cç]a|pedir|solicite)\b.{0,30}\b(card|credit card|cartao|cpf|senha|password)\b/,
   ],
 };
 
