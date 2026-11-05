@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe('falhas e robustez, ponta a ponta', () => {
-  it('API de pedidos fora do ar: o agente não afirma nada sobre o pedido (regra 6)', async () => {
+  it('[E2E-R01] API de pedidos fora do ar: o agente não afirma nada sobre o pedido (regra 6)', async () => {
     const ana = customer(PERSONAS.ana.phone);
     await ana.say('oi'); // identifica o cliente antes da falha
     await simulator('/chaos', { method: 'PUT', body: { ordersApiDown: true } });
@@ -33,7 +33,7 @@ describe('falhas e robustez, ponta a ponta', () => {
     expect(textOf(reply)).not.toContain('em processamento');
   });
 
-  it('API de pedidos cai na hora de executar: resultado incerto, nunca sucesso', async () => {
+  it('[E2E-R02] API de pedidos cai na hora de executar: resultado incerto, nunca sucesso', async () => {
     const ana = customer(PERSONAS.ana.phone);
     const confirmation = await ana.say('Quero cancelar o pedido 100101');
     await simulator('/chaos', { method: 'PUT', body: { ordersApiDown: true } });
@@ -49,7 +49,7 @@ describe('falhas e robustez, ponta a ponta', () => {
     expect(await orderStatus(PERSONAS.ana.customerId, '100101')).toBe('CANCELLED');
   });
 
-  it('catálogo fora do ar: o atendimento segue sem os nomes dos produtos', async () => {
+  it('[E2E-R03] catálogo fora do ar: o atendimento segue sem os nomes dos produtos', async () => {
     await simulator('/chaos', { method: 'PUT', body: { catalogDown: true } });
     const ana = customer(PERSONAS.ana.phone);
     const reply = await ana.say('Qual o status do pedido 100101?');
@@ -57,7 +57,7 @@ describe('falhas e robustez, ponta a ponta', () => {
     expect(textOf(reply)).toContain('item sem detalhes');
   });
 
-  it('modelo indisponível: resposta segura e a confirmação pendente continua funcionando', async () => {
+  it('[E2E-R04] modelo indisponível: resposta segura e a confirmação pendente continua funcionando', async () => {
     const ana = customer(PERSONAS.ana.phone);
     const confirmation = await ana.say('Quero cancelar o pedido 100101');
     await simulator('/chaos', { method: 'PUT', body: { llmDown: true } });
@@ -68,7 +68,7 @@ describe('falhas e robustez, ponta a ponta', () => {
     expect(textOf(result)).toContain('foi cancelado');
   });
 
-  it('reentrega do mesmo webhook não processa a mensagem duas vezes', async () => {
+  it('[E2E-R05] reentrega do mesmo webhook não processa a mensagem duas vezes', async () => {
     const body = {
       messageId: `e2e-${randomUUID()}`,
       from: PERSONAS.bruno.phone,

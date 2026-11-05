@@ -42,19 +42,19 @@ const api = () => ({
 });
 
 describe('autenticação serviço-a-serviço', () => {
-  it('recusa requisição sem chave com 401 em Problem Details', async () => {
+  it('[API-05] recusa requisição sem chave com 401 em Problem Details', async () => {
     const res = await request(app).get(`/v1/customers/${ANA}/orders`);
     expect(res.status).toBe(401);
     expect(res.headers['content-type']).toContain('application/problem+json');
     expect(ProblemSchema.parse(res.body).code).toBe('UNAUTHENTICATED');
   });
 
-  it('recusa chave inválida', async () => {
+  it('[API-05] recusa chave inválida', async () => {
     const res = await request(app).get(`/v1/customers/${ANA}/orders`).set('x-api-key', 'errada');
     expect(res.status).toBe(401);
   });
 
-  it('mantém health e documentação públicos', async () => {
+  it('[API-33] mantém health e documentação públicos', async () => {
     expect((await request(app).get('/health/live')).status).toBe(200);
     expect((await request(app).get('/health/ready')).body).toEqual({
       status: 'ok',
@@ -65,7 +65,7 @@ describe('autenticação serviço-a-serviço', () => {
 });
 
 describe('POST /v1/customers/lookup', () => {
-  it('identifica o cliente pelo telefone e devolve só id e primeiro nome', async () => {
+  it('[API-06] identifica o cliente pelo telefone e devolve só id e primeiro nome', async () => {
     const res = await api().post('/v1/customers/lookup').send({ phone: '+5551990000001' });
     expect(res.status).toBe(200);
     expect(CustomerLookupResultSchema.strict().parse(res.body)).toEqual({
@@ -74,7 +74,7 @@ describe('POST /v1/customers/lookup', () => {
     });
   });
 
-  it('responde 404 para telefone não cadastrado', async () => {
+  it('[API-06] responde 404 para telefone não cadastrado', async () => {
     const res = await api().post('/v1/customers/lookup').send({ phone: '+5511999999999' });
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('CUSTOMER_NOT_FOUND');
@@ -83,14 +83,14 @@ describe('POST /v1/customers/lookup', () => {
   it.each([
     [{ phone: '51990000001' }, 'phone'],
     [{ phone: '+5551990000001', isAdmin: true }, ''],
-  ])('valida a entrada %j', async (body, path) => {
+  ])('[API-08] valida a entrada %j', async (body, path) => {
     const res = await api().post('/v1/customers/lookup').send(body);
     expect(res.status).toBe(400);
     const problem = ValidationProblemSchema.parse(res.body);
     expect(problem.errors?.map((e) => e.path)).toContain(path);
   });
 
-  it('responde 400 para JSON malformado', async () => {
+  it('[API-22] responde 400 para JSON malformado', async () => {
     const res = await api()
       .post('/v1/customers/lookup')
       .set('content-type', 'application/json')
@@ -101,31 +101,31 @@ describe('POST /v1/customers/lookup', () => {
 });
 
 describe('GET /v1/customers/:customerId/orders', () => {
-  it('lista os pedidos do cliente do mais recente ao mais antigo', async () => {
+  it('[API-10] lista os pedidos do cliente do mais recente ao mais antigo', async () => {
     const res = await api().get(`/v1/customers/${ANA}/orders`);
     expect(res.status).toBe(200);
     const { orders } = OrderListSchema.parse(res.body);
     expect(orders.map((o) => o.id)).toEqual(['100101', '100102', '100103']);
   });
 
-  it('respeita o limite', async () => {
+  it('[API-10] respeita o limite', async () => {
     const res = await api().get(`/v1/customers/${ANA}/orders?limit=1`);
     expect(OrderListSchema.parse(res.body).orders).toHaveLength(1);
   });
 
-  it('devolve lista vazia para cliente sem pedidos', async () => {
+  it('[API-10] devolve lista vazia para cliente sem pedidos', async () => {
     const res = await api().get(`/v1/customers/${DIEGO}/orders`);
     expect(res.body).toEqual({ orders: [] });
   });
 
-  it('valida limit fora da faixa', async () => {
+  it('[API-08] valida limit fora da faixa', async () => {
     const res = await api().get(`/v1/customers/${ANA}/orders?limit=500`);
     expect(res.status).toBe(400);
   });
 });
 
 describe('GET /v1/customers/:customerId/orders/:orderId', () => {
-  it('retorna o pedido com valores formatados e elegibilidade calculada pelo domínio', async () => {
+  it('[API-09] retorna o pedido com valores formatados e elegibilidade calculada pelo domínio', async () => {
     const res = await api().get(`/v1/customers/${ANA}/orders/100101`);
     expect(res.status).toBe(200);
     const order = OrderSchema.parse(res.body);
@@ -138,7 +138,7 @@ describe('GET /v1/customers/:customerId/orders/:orderId', () => {
     expect(order.items).toHaveLength(2);
   });
 
-  it('informa o motivo do bloqueio para pedido enviado', async () => {
+  it('[API-09] informa o motivo do bloqueio para pedido enviado', async () => {
     const res = await api().get(`/v1/customers/${ANA}/orders/100102`);
     expect(OrderSchema.parse(res.body)).toMatchObject({
       status: 'SHIPPED',
@@ -147,7 +147,7 @@ describe('GET /v1/customers/:customerId/orders/:orderId', () => {
     });
   });
 
-  it('não revela pedido de outro cliente: resposta idêntica a pedido inexistente (BOLA)', async () => {
+  it('[API-07] não revela pedido de outro cliente: resposta idêntica a pedido inexistente (BOLA)', async () => {
     const otherCustomers = await api().get(`/v1/customers/${BRUNO}/orders/100101`);
     const nonexistent = await api().get(`/v1/customers/${BRUNO}/orders/999999`);
 
@@ -168,13 +168,13 @@ describe('GET /v1/customers/:customerId/orders/:orderId', () => {
   it.each([
     ['abc', 'orderId'],
     ['1001011', 'orderId'],
-  ])('rejeita orderId inválido (%s)', async (orderId, path) => {
+  ])('[API-08] rejeita orderId inválido (%s)', async (orderId, path) => {
     const res = await api().get(`/v1/customers/${ANA}/orders/${orderId}`);
     expect(res.status).toBe(400);
     expect(ValidationProblemSchema.parse(res.body).errors?.[0]?.path).toBe(path);
   });
 
-  it('rejeita customerId que não é UUID', async () => {
+  it('[API-08] rejeita customerId que não é UUID', async () => {
     const res = await api().get(
       `/v1/customers/${encodeURIComponent("1' OR '1'='1")}/orders/100101`,
     );
@@ -183,7 +183,7 @@ describe('GET /v1/customers/:customerId/orders/:orderId', () => {
 });
 
 describe('contrato de erros e rastreabilidade', () => {
-  it('propaga o correlation id recebido no header e no corpo do erro', async () => {
+  it('[API-32] propaga o correlation id recebido no header e no corpo do erro', async () => {
     const res = await api()
       .get(`/v1/customers/${ANA}/orders/999999`)
       .set('x-correlation-id', 'corr-test-12345');
@@ -191,7 +191,7 @@ describe('contrato de erros e rastreabilidade', () => {
     expect(res.body.correlationId).toBe('corr-test-12345');
   });
 
-  it('responde 404 em Problem Details para rota inexistente', async () => {
+  it('[API-22] responde 404 em Problem Details para rota inexistente', async () => {
     const res = await api().get('/v1/nada');
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ROUTE_NOT_FOUND');
@@ -199,7 +199,7 @@ describe('contrato de erros e rastreabilidade', () => {
 });
 
 describe('logs estruturados', () => {
-  it('registram eventos de negócio sem dados pessoais nem identificadores reais', async () => {
+  it('[API-25] registram eventos de negócio sem dados pessoais nem identificadores reais', async () => {
     await api().post('/v1/customers/lookup').send({ phone: '+5551990000001' });
     await api().get(`/v1/customers/${ANA}/orders/100101`);
 

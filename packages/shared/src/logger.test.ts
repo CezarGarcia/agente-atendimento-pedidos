@@ -17,7 +17,7 @@ function captureLogger() {
 }
 
 describe('createLogger', () => {
-  it('emite JSON estruturado com serviço, nível textual e timestamp ISO', () => {
+  it('[SH-04] emite JSON estruturado com serviço, nível textual e timestamp ISO', () => {
     const { logger, lines } = captureLogger();
     logger.info({ event: 'order.lookup', orderId: '100234' }, 'pedido consultado');
 
@@ -31,7 +31,7 @@ describe('createLogger', () => {
     expect(lines[0]!['time']).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  it('inclui automaticamente o correlationId e campos do contexto', () => {
+  it('[SH-04] inclui automaticamente o correlationId e campos do contexto', () => {
     const { logger, lines } = captureLogger();
     runWithContext(
       { correlationId: 'corr-12345678', fields: { conversationRef: 'conv_1' } },
@@ -42,7 +42,7 @@ describe('createLogger', () => {
     expect(lines[0]).toMatchObject({ correlationId: 'corr-12345678', conversationRef: 'conv_1' });
   });
 
-  it('redige credenciais e dados pessoais logados por engano', () => {
+  it('[SH-04] redige credenciais e dados pessoais logados por engano', () => {
     const { logger, lines } = captureLogger();
     logger.info({
       req: { headers: { authorization: 'Bearer abc', 'x-api-key': 'k' } },

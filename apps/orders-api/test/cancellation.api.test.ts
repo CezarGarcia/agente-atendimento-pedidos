@@ -52,7 +52,7 @@ const historyOf = (orderId: string) =>
     .execute();
 
 describe('POST …/cancellation — regra de negócio validada na API', () => {
-  it('cancela pedido em processamento e registra a auditoria', async () => {
+  it('[API-11] cancela pedido em processamento e registra a auditoria', async () => {
     const res = await cancel(ANA, '100101')
       .set('x-correlation-id', 'corr-cancel-0001')
       .send({ reason: 'Comprei errado' });
@@ -79,7 +79,7 @@ describe('POST …/cancellation — regra de negócio validada na API', () => {
     ]);
   });
 
-  it('aceita requisição sem corpo (motivo opcional)', async () => {
+  it('[API-11] aceita requisição sem corpo (motivo opcional)', async () => {
     const res = await cancel(BRUNO, '100201');
     expect(res.status).toBe(200);
   });
@@ -90,7 +90,7 @@ describe('POST …/cancellation — regra de negócio validada na API', () => {
     ['100202', BRUNO, 'CANCELLED', 'ALREADY_CANCELLED'],
     ['100301', CARLA, 'AWAITING_PAYMENT', 'PAYMENT_PENDING'],
   ])(
-    'recusa o pedido %s (%s → %s) com 409 e não altera o status',
+    '[API-12] recusa o pedido %s (%s → %s) com 409 e não altera o status',
     async (orderId, customerId, status, reason) => {
       const res = await cancel(customerId, orderId);
 
@@ -114,26 +114,26 @@ describe('POST …/cancellation — regra de negócio validada na API', () => {
     },
   );
 
-  it('responde 404 e não altera pedido de outro cliente', async () => {
+  it('[API-13] responde 404 e não altera pedido de outro cliente', async () => {
     const res = await cancel(BRUNO, '100101');
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ORDER_NOT_FOUND');
     expect(await orderStatus(database.db, '100101')).toBe('PROCESSING');
   });
 
-  it('responde 404 para pedido inexistente', async () => {
+  it('[API-13] responde 404 para pedido inexistente', async () => {
     const res = await cancel(ANA, '999999');
     expect(res.status).toBe(404);
   });
 
-  it('exige Idempotency-Key', async () => {
+  it('[API-14] exige Idempotency-Key', async () => {
     const res = await cancel(ANA, '100101', null);
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
     expect(await orderStatus(database.db, '100101')).toBe('PROCESSING');
   });
 
-  it('valida o formato da Idempotency-Key', async () => {
+  it('[API-14] valida o formato da Idempotency-Key', async () => {
     const res = await cancel(ANA, '100101', 'curta');
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
@@ -143,7 +143,7 @@ describe('POST …/cancellation — regra de negócio validada na API', () => {
     [{ reason: 'x'.repeat(501) }],
     [{ reason: 'ok', status: 'CANCELLED' }],
     [{ reason: 42 }],
-  ])('rejeita corpo inválido %#', async (body) => {
+  ])('[API-15] rejeita corpo inválido %#', async (body) => {
     const res = await cancel(ANA, '100101').send(body);
     expect(res.status).toBe(400);
     expect(await orderStatus(database.db, '100101')).toBe('PROCESSING');
@@ -151,7 +151,7 @@ describe('POST …/cancellation — regra de negócio validada na API', () => {
 });
 
 describe('idempotência', () => {
-  it('repetir a mesma chave devolve a resposta original sem executar de novo', async () => {
+  it('[API-16] repetir a mesma chave devolve a resposta original sem executar de novo', async () => {
     const key = `conv-${randomUUID()}`;
     const first = await cancel(ANA, '100101', key).send({ reason: 'mudei de ideia' });
     const second = await cancel(ANA, '100101', key).send({ reason: 'mudei de ideia' });
@@ -163,14 +163,14 @@ describe('idempotência', () => {
     expect(await historyOf('100101')).toHaveLength(1);
   });
 
-  it('uma nova chave para pedido já cancelado recebe 409 ALREADY_CANCELLED', async () => {
+  it('[API-12] uma nova chave para pedido já cancelado recebe 409 ALREADY_CANCELLED', async () => {
     await cancel(ANA, '100101');
     const res = await cancel(ANA, '100101');
     expect(res.status).toBe(409);
     expect(res.body.reason).toBe('ALREADY_CANCELLED');
   });
 
-  it('a mesma chave com outro corpo é rejeitada com 422', async () => {
+  it('[API-17] a mesma chave com outro corpo é rejeitada com 422', async () => {
     const key = `conv-${randomUUID()}`;
     await cancel(ANA, '100101', key).send({ reason: 'um motivo' });
     const res = await cancel(ANA, '100101', key).send({ reason: 'outro motivo' });
@@ -178,7 +178,7 @@ describe('idempotência', () => {
     expect(res.body.code).toBe('IDEMPOTENCY_KEY_MISMATCH');
   });
 
-  it('também reproduz recusas (409) para a mesma chave', async () => {
+  it('[API-18] também reproduz recusas (409) para a mesma chave', async () => {
     const key = `conv-${randomUUID()}`;
     const first = await cancel(ANA, '100102', key);
     const second = await cancel(ANA, '100102', key);
@@ -189,7 +189,7 @@ describe('idempotência', () => {
 });
 
 describe('proteção de dados e consistência', () => {
-  it('mascara dados pessoais digitados no motivo e nunca registra o motivo em log', async () => {
+  it('[API-26] mascara dados pessoais digitados no motivo e nunca registra o motivo em log', async () => {
     const res = await cancel(ANA, '100101').send({ reason: 'meu cpf é 529.982.247-25, desisti' });
     expect(res.status).toBe(200);
 
@@ -204,14 +204,14 @@ describe('proteção de dados e consistência', () => {
     expect(JSON.stringify(logLines)).not.toMatch(/529\.982|desisti/);
   });
 
-  it('remove a previsão de entrega do pedido cancelado', async () => {
+  it('[API-27] remove a previsão de entrega do pedido cancelado', async () => {
     const res = await cancel(BRUNO, '100201');
     expect(
       CancellationResultSchema.parse(res.body).order.shipping.estimatedDeliveryDate,
     ).toBeNull();
   });
 
-  it('repetição de um 404 também informa Idempotent-Replayed', async () => {
+  it('[API-18] repetição de um 404 também informa Idempotent-Replayed', async () => {
     const key = `conv-${randomUUID()}`;
     await cancel(ANA, '999999', key);
     const replay = await cancel(ANA, '999999', key);
@@ -219,7 +219,7 @@ describe('proteção de dados e consistência', () => {
     expect(replay.headers['idempotent-replayed']).toBe('true');
   });
 
-  it('uma chave expirada (24h) inicia uma nova tentativa', async () => {
+  it('[API-19] uma chave expirada (24h) inicia uma nova tentativa', async () => {
     const key = `conv-${randomUUID()}`;
     expect((await cancel(CARLA, '100301', key)).status).toBe(409); // aguardando pagamento
 
@@ -242,7 +242,7 @@ describe('proteção de dados e consistência', () => {
 });
 
 describe('concorrência', () => {
-  it('10 cancelamentos simultâneos do mesmo pedido: exatamente 1 sucesso', async () => {
+  it('[API-20] 10 cancelamentos simultâneos do mesmo pedido: exatamente 1 sucesso', async () => {
     const results = await Promise.all(Array.from({ length: 10 }, () => cancel(BRUNO, '100201')));
     const statuses = results.map((res) => res.status).sort();
 
@@ -256,7 +256,7 @@ describe('concorrência', () => {
     expect(await historyOf('100201')).toHaveLength(1);
   });
 
-  it('requisições simultâneas com a mesma chave executam a ação uma única vez', async () => {
+  it('[API-21] requisições simultâneas com a mesma chave executam a ação uma única vez', async () => {
     const key = `conv-${randomUUID()}`;
     const results = await Promise.all(
       Array.from({ length: 5 }, () => cancel(BRUNO, '100201', key)),

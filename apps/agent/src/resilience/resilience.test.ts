@@ -5,7 +5,7 @@ import { backoffDelayMs } from './retry.js';
 import { TtlCache } from './ttl-cache.js';
 
 describe('TtlCache', () => {
-  it('serve fresco dentro do TTL, stale depois e esquece após a janela de stale', () => {
+  it('[FS-14] serve fresco dentro do TTL, stale depois e esquece após a janela de stale', () => {
     let now = 0;
     const cache = new TtlCache<string, number>({
       maxEntries: 10,
@@ -21,7 +21,7 @@ describe('TtlCache', () => {
     expect(cache.get('a')).toBeUndefined();
   });
 
-  it('respeita o limite de entradas descartando a menos usada', () => {
+  it('[FS-14] respeita o limite de entradas descartando a menos usada', () => {
     const cache = new TtlCache<string, number>({ maxEntries: 2, maxStaleMs: 0 });
     cache.set('a', 1, 1_000);
     cache.set('b', 2, 1_000);
@@ -35,7 +35,7 @@ describe('TtlCache', () => {
 });
 
 describe('CircuitBreaker', () => {
-  it('abre após falhas consecutivas, testa após o timeout e fecha com sucesso', () => {
+  it('[FS-14] abre após falhas consecutivas, testa após o timeout e fecha com sucesso', () => {
     let now = 0;
     const transitions: string[] = [];
     const breaker = new CircuitBreaker({
@@ -61,7 +61,7 @@ describe('CircuitBreaker', () => {
     expect(transitions).toEqual(['closed->open', 'open->half_open', 'half_open->closed']);
   });
 
-  it('volta a abrir se a requisição de teste falhar', () => {
+  it('[FS-14] volta a abrir se a requisição de teste falhar', () => {
     let now = 0;
     const breaker = new CircuitBreaker({
       failureThreshold: 1,
@@ -76,7 +76,7 @@ describe('CircuitBreaker', () => {
     expect(breaker.tryAcquire()).toBe(false);
   });
 
-  it('um sucesso zera a contagem de falhas', () => {
+  it('[FS-14] um sucesso zera a contagem de falhas', () => {
     const breaker = new CircuitBreaker({ failureThreshold: 2, resetTimeoutMs: 100 });
     breaker.recordFailure();
     breaker.recordSuccess();
@@ -86,7 +86,7 @@ describe('CircuitBreaker', () => {
 });
 
 describe('backoffDelayMs', () => {
-  it('cresce exponencialmente até o teto, com jitter', () => {
+  it('[FS-14] cresce exponencialmente até o teto, com jitter', () => {
     const options = { baseMs: 100, maxMs: 1_000 };
     expect(backoffDelayMs(0, options, () => 0.999)).toBe(99);
     expect(backoffDelayMs(3, options, () => 0.5)).toBe(400);

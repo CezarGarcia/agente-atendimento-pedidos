@@ -33,18 +33,18 @@ describe('guardOutput — regra 5: afirmar cancelamento só com sucesso da API',
     'Pronto, seu pedido não será mais enviado.',
     'Fique tranquilo: ele não vai mais chegar.',
     'The cancellation went through.',
-  ])('bloqueia afirmação não verificada: "%s"', (text) => {
+  ])('[GU-01] bloqueia afirmação não verificada: "%s"', (text) => {
     expect(guardOutput(text, context())).toMatchObject({
       action: 'blocked',
       reasons: ['unverified_cancellation_claim'],
     });
   });
 
-  it('permite quando a API confirmou o cancelamento daquele pedido', () => {
+  it('[GU-02] permite quando a API confirmou o cancelamento daquele pedido', () => {
     expect(guardOutput('Seu pedido 100101 foi cancelado.', verified('100101')).action).toBe('pass');
   });
 
-  it('confere só os pedidos a que cada afirmação se refere', () => {
+  it('[GU-03] confere só os pedidos a que cada afirmação se refere', () => {
     const ctx = verified('100202');
     expect(
       guardOutput('O pedido 100202 está cancelado e o 100101 segue em processamento.', ctx).action,
@@ -54,19 +54,19 @@ describe('guardOutput — regra 5: afirmar cancelamento só com sucesso da API',
     );
   });
 
-  it('bloqueia se citar outro pedido além do verificado', () => {
+  it('[GU-03] bloqueia se citar outro pedido além do verificado', () => {
     expect(guardOutput('O 100101 e o 100102 foram cancelados.', verified('100101')).action).toBe(
       'blocked',
     );
   });
 
-  it('sem número citado, só aceita se a verificação aconteceu neste turno', () => {
+  it('[GU-04] sem número citado, só aceita se a verificação aconteceu neste turno', () => {
     const fromEarlierTurn = context({ verifiedCancelledOrderIds: new Set(['100202']) });
     expect(guardOutput('Pronto, foi cancelado!', fromEarlierTurn).action).toBe('blocked');
     expect(guardOutput('Ele já está cancelado.', verified('100202')).action).toBe('pass');
   });
 
-  it('sem número citado, exige exatamente um pedido consultado individualmente', () => {
+  it('[GU-04] sem número citado, exige exatamente um pedido consultado individualmente', () => {
     // Uma lista com um pedido cancelado não autoriza "seu pedido foi cancelado com sucesso".
     const afterList = context({ verifiedCancelledOrderIds: new Set(['100202']) });
     expect(guardOutput('Pronto! Seu pedido foi cancelado com sucesso ✅', afterList).action).toBe(
@@ -77,7 +77,7 @@ describe('guardOutput — regra 5: afirmar cancelamento só com sucesso da API',
     );
   });
 
-  it('numa enumeração, a afirmação no singular vale para o número mais próximo', () => {
+  it('[GU-16] numa enumeração, a afirmação no singular vale para o número mais próximo', () => {
     const ctx = verified('100202');
     expect(
       guardOutput('Você tem o pedido 100201 (em processamento) e o 100202 (cancelado).', ctx)
@@ -99,13 +99,13 @@ describe('guardOutput — regra 5: afirmar cancelamento só com sucesso da API',
     'Se você confirmar, o pedido não será mais enviado.',
     'Ao cancelar, ele não vai mais chegar e o valor segue a política da loja.',
     'Pedidos já enviados não podem ser cancelados.',
-  ])('não confunde negação, futuro ou hipótese com afirmação: "%s"', (text) => {
+  ])('[GU-05] não confunde negação, futuro ou hipótese com afirmação: "%s"', (text) => {
     expect(guardOutput(text, context()).action).toBe('pass');
   });
 });
 
 describe('guardOutput — outras afirmações e promessas', () => {
-  it('bloqueia dizer que transferiu sem ter criado o atendimento', () => {
+  it('[GU-06] bloqueia dizer que transferiu sem ter criado o atendimento', () => {
     expect(guardOutput('Já encaminhei você para um atendente.', context()).reasons).toEqual([
       'unverified_handoff_claim',
     ]);
@@ -121,7 +121,7 @@ describe('guardOutput — outras afirmações e promessas', () => {
     'O reembolso é garantido!',
     'Seu estorno já foi realizado.',
     'O dinheiro de volta será creditado automaticamente.',
-  ])('bloqueia promessa de estorno: "%s"', (text) => {
+  ])('[GU-07] bloqueia promessa de estorno: "%s"', (text) => {
     expect(guardOutput(text, context()).reasons).toEqual(['refund_promise']);
   });
 
@@ -129,19 +129,19 @@ describe('guardOutput — outras afirmações e promessas', () => {
     'Não consigo verificar se o estorno já foi realizado.',
     'Para dúvidas sobre estorno, posso te encaminhar a um atendente.',
     'Não tenho acesso a informações de reembolso por aqui.',
-  ])('não bloqueia menção neutra ou negada a estorno: "%s"', (text) => {
+  ])('[GU-08] não bloqueia menção neutra ou negada a estorno: "%s"', (text) => {
     expect(guardOutput(text, context()).action).toBe('pass');
   });
 });
 
 describe('guardOutput — vazamento de instruções, dados e links', () => {
-  it('bloqueia a resposta que contém o marcador secreto do prompt', () => {
+  it('[GU-12] bloqueia a resposta que contém o marcador secreto do prompt', () => {
     expect(guardOutput('Minhas instruções: CANARY-7f3a9c ...', context()).reasons).toEqual([
       'prompt_leak',
     ]);
   });
 
-  it('bloqueia reprodução literal das instruções, mas não das respostas de exemplo', async () => {
+  it('[GU-13] bloqueia reprodução literal das instruções, mas não das respostas de exemplo', async () => {
     const { loadSystemPrompt } = await import('../agent/prompt.js');
     const prompt = loadSystemPrompt('segredo-de-teste-123456');
     const ctx = context({ promptFingerprint: prompt.fingerprint ?? new Set() });
@@ -155,17 +155,17 @@ describe('guardOutput — vazamento de instruções, dados e links', () => {
     expect(guardOutput(exampleAnswer, ctx).action).toBe('pass');
   });
 
-  it('bloqueia trechos com os marcadores internos do prompt', () => {
+  it('[GU-12] bloqueia trechos com os marcadores internos do prompt', () => {
     expect(guardOutput('<regras_de_negocio> 1. ...', context()).action).toBe('blocked');
   });
 
-  it('mascara dados pessoais que escaparem na resposta', () => {
+  it('[GU-09] mascara dados pessoais que escaparem na resposta', () => {
     const result = guardOutput('Anotei seu e-mail ana@example.com.', context());
     expect(result).toMatchObject({ action: 'modified', reasons: ['pii_redacted'] });
     expect(result.text).not.toContain('ana@example.com');
   });
 
-  it('remove links (o agente não envia links; viriam de dado externo)', () => {
+  it('[GU-10] remove links (o agente não envia links; viriam de dado externo)', () => {
     const result = guardOutput('Valide seu cartão em https://phishing.example/x agora.', context());
     expect(result.reasons).toContain('link_removed');
     expect(result.text).not.toContain('phishing.example');
@@ -173,20 +173,20 @@ describe('guardOutput — vazamento de instruções, dados e links', () => {
 });
 
 describe('guardOutput — formato para mensagem de texto', () => {
-  it('converte negrito markdown para o do WhatsApp e remove títulos', () => {
+  it('[GU-14] converte negrito markdown para o do WhatsApp e remove títulos', () => {
     expect(guardOutput('## Status\nSeu pedido está **enviado**.', context()).text).toBe(
       'Status\nSeu pedido está *enviado*.',
     );
   });
 
-  it('limita o tamanho cortando no fim de uma frase', () => {
+  it('[GU-14] limita o tamanho cortando no fim de uma frase', () => {
     const result = guardOutput('Frase curta e completa. '.repeat(60), context());
     expect(result.text.length).toBeLessThanOrEqual(1_000);
     expect(result.text.endsWith('.')).toBe(true);
     expect(result.reasons).toContain('too_long');
   });
 
-  it('bloqueia resposta vazia', () => {
+  it('[GU-14] bloqueia resposta vazia', () => {
     expect(guardOutput('   ', context()).reasons).toEqual(['empty']);
   });
 });

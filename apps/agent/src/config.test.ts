@@ -20,14 +20,14 @@ const production = {
 };
 
 describe('loadConfig', () => {
-  it('usa Claude Haiku 5.5 com esforço baixo por padrão', () => {
+  it('[AG-39] usa Claude Haiku 5.5 com esforço baixo por padrão', () => {
     const config = loadConfig(base);
     expect(config.LLM_MODEL).toBe('claude-haiku-5-5');
     expect(config.LLM_EFFORT).toBe('low');
     expect(config.LLM_MAX_TOKENS).toBe(8_192);
   });
 
-  it('aceita só modelos compatíveis com a requisição do harness', () => {
+  it('[AG-39] aceita só modelos compatíveis com a requisição do harness', () => {
     expect(loadConfig({ ...base, LLM_MODEL: 'claude-sonnet-5-5' }).LLM_MODEL).toBe(
       'claude-sonnet-5-5',
     );
@@ -35,11 +35,11 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...base, LLM_MODEL: 'claude-sonnet-5' })).toThrow(ConfigError);
   });
 
-  it('trata variável vazia (padrão do docker-compose) como ausente', () => {
+  it('[AG-39] trata variável vazia (padrão do docker-compose) como ausente', () => {
     expect(loadConfig({ ...base, ANTHROPIC_API_KEY: '' }).ANTHROPIC_API_KEY).toBeUndefined();
   });
 
-  it('em produção, exige a chave da Anthropic e recusa segredos de desenvolvimento e modo demo', () => {
+  it('[AG-39] em produção, exige a chave da Anthropic e recusa segredos de desenvolvimento e modo demo', () => {
     expect(loadConfig(production).NODE_ENV).toBe('production');
     expect(() => loadConfig({ ...production, ANTHROPIC_API_KEY: '' })).toThrow(/ANTHROPIC_API_KEY/);
     expect(() => loadConfig({ ...production, ORDERS_API_KEY: base.ORDERS_API_KEY })).toThrow(

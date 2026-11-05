@@ -19,7 +19,7 @@ afterAll(async () => {
 });
 
 describe('simulador web', () => {
-  it('conduz o cancelamento com botões e mostra os bastidores do turno', async () => {
+  it('[E2E-U01] conduz o cancelamento com botões e mostra os bastidores do turno', async () => {
     const page = await browser.newPage();
     const errors: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));

@@ -11,22 +11,22 @@ describe('redactPii', () => {
     ['CNPJ 11.222.333/0001-81', 'cnpj', '11.222.333/0001-81'],
     ['me liga no (51) 99876-5432', 'phone', '99876-5432'],
     ['whats +55 51 998765432', 'phone', '998765432'],
-  ] as const)('mascara %s', (input, kind, secret) => {
+  ] as const)('[SH-01] mascara %s', (input, kind, secret) => {
     const result = redactPii(input);
     expect(result.detected).toContain(kind);
     expect(result.text).not.toContain(secret);
   });
 
-  it('não altera números de pedido, valores e datas', () => {
+  it('[SH-02] não altera números de pedido, valores e datas', () => {
     const input = 'Quero cancelar o pedido 100234 de R$ 109,95 feito em 05/11/2026';
     expect(redactPii(input)).toEqual({ text: input, detected: [] });
   });
 
-  it('não confunde sequência de 16 dígitos inválida (Luhn) com cartão', () => {
+  it('[SH-02] não confunde sequência de 16 dígitos inválida (Luhn) com cartão', () => {
     expect(redactPii('protocolo 1234567812345678').detected).not.toContain('card');
   });
 
-  it('mascara vários dados na mesma mensagem e reporta apenas os tipos', () => {
+  it('[SH-01] mascara vários dados na mesma mensagem e reporta apenas os tipos', () => {
     const result = redactPii('sou ana@example.com, cpf 529.982.247-25');
     expect(result.detected).toEqual(expect.arrayContaining(['email', 'cpf']));
     expect(result.text).toBe('sou [EMAIL REMOVIDO], cpf [CPF REMOVIDO]');
@@ -34,20 +34,20 @@ describe('redactPii', () => {
 });
 
 describe('validadores', () => {
-  it('valida CPF pelos dígitos verificadores', () => {
+  it('[SH-01] valida CPF pelos dígitos verificadores', () => {
     expect(isValidCpf('529.982.247-25')).toBe(true);
     expect(isValidCpf('529.982.247-24')).toBe(false);
     expect(isValidCpf('111.111.111-11')).toBe(false);
   });
 
-  it('valida cartão pelo algoritmo de Luhn', () => {
+  it('[SH-01] valida cartão pelo algoritmo de Luhn', () => {
     expect(isValidLuhn('4111111111111111')).toBe(true);
     expect(isValidLuhn('4111111111111112')).toBe(false);
   });
 });
 
 describe('pseudonymize', () => {
-  it('é estável para o mesmo segredo e diferente entre segredos', () => {
+  it('[SH-03] é estável para o mesmo segredo e diferente entre segredos', () => {
     const a = pseudonymize('+5551998765432', 'segredo-a', 'cus');
     expect(a).toBe(pseudonymize('+5551998765432', 'segredo-a', 'cus'));
     expect(a).not.toBe(pseudonymize('+5551998765432', 'segredo-b', 'cus'));

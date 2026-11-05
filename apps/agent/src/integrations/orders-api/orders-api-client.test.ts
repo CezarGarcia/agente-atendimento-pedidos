@@ -49,7 +49,7 @@ const cancel = (api: OrdersApiClient) =>
   api.requestCancellation('cust-1', '100101', { idempotencyKey: 'pending-1', reason: null });
 
 describe('OrdersApiClient — resultados de negócio explícitos', () => {
-  it('cancelamento só é sucesso com 200 E pedido devolvido como CANCELLED (regra 5)', async () => {
+  it('[AG-38] cancelamento só é sucesso com 200 E pedido devolvido como CANCELLED (regra 5)', async () => {
     expect((await cancel(client(() => json({ order: ORDER }, 200)).api)).kind).toBe('cancelled');
     const weird = await cancel(
       client(() => json({ order: { ...ORDER, status: 'PROCESSING' } }, 200)).api,
@@ -57,7 +57,7 @@ describe('OrdersApiClient — resultados de negócio explícitos', () => {
     expect(weird).toEqual({ kind: 'technical_error', reason: 'unexpected_response' });
   });
 
-  it('409 ORDER_NOT_CANCELLABLE vira not_cancellable com o motivo', async () => {
+  it('[AG-38] 409 ORDER_NOT_CANCELLABLE vira not_cancellable com o motivo', async () => {
     const result = await cancel(
       client(() =>
         json(
@@ -73,7 +73,7 @@ describe('OrdersApiClient — resultados de negócio explícitos', () => {
     });
   });
 
-  it('404 vira not_found', async () => {
+  it('[AG-38] 404 vira not_found', async () => {
     expect(await cancel(client(() => json({ code: 'ORDER_NOT_FOUND' }, 404)).api)).toEqual({
       kind: 'not_found',
     });
@@ -83,14 +83,14 @@ describe('OrdersApiClient — resultados de negócio explícitos', () => {
     [503, 'unavailable'],
     [500, 'unavailable'],
     [401, 'unauthorized'],
-  ])('HTTP %i vira erro técnico (%s)', async (status, reason) => {
+  ])('[AG-38] HTTP %i vira erro técnico (%s)', async (status, reason) => {
     expect(await cancel(client(() => json({ code: 'X' }, status)).api)).toEqual({
       kind: 'technical_error',
       reason,
     });
   });
 
-  it('corpo fora do contrato vira erro técnico, nunca sucesso', async () => {
+  it('[AG-38] corpo fora do contrato vira erro técnico, nunca sucesso', async () => {
     const result = await client(() => json({ inesperado: true }, 200)).api.getOrder(
       'cust-1',
       '100101',
@@ -98,7 +98,7 @@ describe('OrdersApiClient — resultados de negócio explícitos', () => {
     expect(result).toEqual({ kind: 'technical_error', reason: 'unexpected_response' });
   });
 
-  it('timeout vira erro técnico', async () => {
+  it('[AG-38] timeout vira erro técnico', async () => {
     const hang: typeof fetch = (_input, init) =>
       new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => {
@@ -121,7 +121,7 @@ describe('OrdersApiClient — resultados de negócio explícitos', () => {
 });
 
 describe('OrdersApiClient — transporte', () => {
-  it('repete o cancelamento com a MESMA Idempotency-Key após falha transitória', async () => {
+  it('[AG-38] repete o cancelamento com a MESMA Idempotency-Key após falha transitória', async () => {
     let calls = 0;
     const { api, fetchFn } = client(() => {
       calls += 1;
@@ -134,13 +134,13 @@ describe('OrdersApiClient — transporte', () => {
     expect(keys).toEqual(['pending-1', 'pending-1']);
   });
 
-  it('não repete quando a credencial é recusada', async () => {
+  it('[AG-38] não repete quando a credencial é recusada', async () => {
     const { api, fetchFn } = client(() => json({ code: 'UNAUTHENTICATED' }, 401));
     await api.getOrder('cust-1', '100101');
     expect(fetchFn).toHaveBeenCalledTimes(1);
   });
 
-  it('envia chave de API e propaga o correlation id', async () => {
+  it('[AG-38] envia chave de API e propaga o correlation id', async () => {
     const { api, fetchFn } = client(() => json({ customerId: 'c', firstName: 'Ana' }, 200));
     await runWithContext({ correlationId: 'corr-abc-123456' }, () =>
       api.findCustomerByPhone('+5551990000001'),
@@ -152,7 +152,7 @@ describe('OrdersApiClient — transporte', () => {
     expect((fetchFn.mock.calls[0]?.[0] as URL).toString()).not.toContain('5551990000001');
   });
 
-  it('codifica identificadores na URL', async () => {
+  it('[AG-38] codifica identificadores na URL', async () => {
     const { api, fetchFn } = client(() => json({ code: 'ORDER_NOT_FOUND' }, 404));
     await api.getOrder('../admin', '100101');
     expect((fetchFn.mock.calls[0]?.[0] as URL).toString()).toContain(

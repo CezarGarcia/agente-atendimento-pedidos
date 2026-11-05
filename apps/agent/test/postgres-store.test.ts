@@ -74,7 +74,7 @@ function agentWith(store: PostgresConversationStore) {
 }
 
 describe('PostgresConversationStore com o agente real', () => {
-  it('executa o fluxo completo de cancelamento persistindo estado e histórico', async () => {
+  it('[PG-01] executa o fluxo completo de cancelamento persistindo estado e histórico', async () => {
     const store = new PostgresConversationStore(db);
     const { agent, orders, model } = agentWith(store);
     model.script(
@@ -125,7 +125,7 @@ describe('PostgresConversationStore com o agente real', () => {
     responseSource: 'llm',
   });
 
-  it('guarda o histórico exatamente como enviado ao modelo (inclusive blocos de raciocínio)', async () => {
+  it('[PG-02] guarda o histórico exatamente como enviado ao modelo (inclusive blocos de raciocínio)', async () => {
     const store = new PostgresConversationStore(db);
     const conversation = await newConversation(store);
     const assistant: LlmMessage = {
@@ -156,7 +156,7 @@ describe('PostgresConversationStore com o agente real', () => {
     expect(loaded.map((m) => m.message)).toEqual([{ role: 'user', content: 'oi' }, assistant]);
   });
 
-  it('encontra a conversa ativa pelo HMAC do telefone e respeita a inatividade', async () => {
+  it('[PG-03] encontra a conversa ativa pelo HMAC do telefone e respeita a inatividade', async () => {
     const store = new PostgresConversationStore(db);
     const conversation = await newConversation(store);
     await db
@@ -172,7 +172,7 @@ describe('PostgresConversationStore com o agente real', () => {
     expect(await store.findActiveConversation(phoneRef, new Date(Date.now() - 60_000))).toBeNull();
   });
 
-  it('reserva cada mensagem uma única vez e devolve a resposta gravada nas repetições', async () => {
+  it('[PG-04] reserva cada mensagem uma única vez e devolve a resposta gravada nas repetições', async () => {
     const store = new PostgresConversationStore(db);
     const conversation = await newConversation(store);
     const key = `tel:${randomUUID()}`;
@@ -199,7 +199,7 @@ describe('PostgresConversationStore com o agente real', () => {
     expect(await store.claimMessage(key)).toEqual({ status: 'duplicate', reply });
   });
 
-  it('retoma a reserva abandonada (processo caiu antes de responder)', async () => {
+  it('[PG-04] retoma a reserva abandonada (processo caiu antes de responder)', async () => {
     const store = new PostgresConversationStore(db);
     const key = `tel:${randomUUID()}`;
     await store.claimMessage(key);
@@ -211,7 +211,7 @@ describe('PostgresConversationStore com o agente real', () => {
     expect(await store.claimMessage(key)).toEqual({ status: 'claimed' });
   });
 
-  it('transição de ação pendente é atômica: confirmação e recusa simultâneas, só uma vence', async () => {
+  it('[PG-05] transição de ação pendente é atômica: confirmação e recusa simultâneas, só uma vence', async () => {
     const store = new PostgresConversationStore(db);
     const conversation = await newConversation(store);
     const id = randomUUID();
@@ -237,7 +237,7 @@ describe('PostgresConversationStore com o agente real', () => {
     expect(await store.findOpenPendingAction(conversation.id)).toBeNull();
   });
 
-  it('mantém um único protocolo de atendimento por conversa', async () => {
+  it('[PG-06] mantém um único protocolo de atendimento por conversa', async () => {
     const store = new PostgresConversationStore(db);
     const conversation = await newConversation(store);
     const first = await store.createHandoff({

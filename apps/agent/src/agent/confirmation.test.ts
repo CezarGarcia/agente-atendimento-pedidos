@@ -14,12 +14,12 @@ describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', ()
     'sim, pode cancelar',
     'Confirmo',
     'isso mesmo',
-  ])('confirma com resposta inequívoca: "%s"', (text) => {
+  ])('[AG-16] confirma com resposta inequívoca: "%s"', (text) => {
     expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('confirm');
   });
 
   it.each(['Não', 'nao', 'não quero', 'deixa pra lá', 'Mudei de ideia', 'quero manter'])(
-    'recusa com resposta inequívoca: "%s"',
+    '[AG-16] recusa com resposta inequívoca: "%s"',
     (text) => {
       expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('decline');
     },
@@ -38,11 +38,11 @@ describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', ()
     'pode?',
     'cancela?',
     'sim?',
-  ])('NÃO confirma resposta ambígua, pergunta ou outro assunto: "%s"', (text) => {
+  ])('[AG-16] NÃO confirma resposta ambígua, pergunta ou outro assunto: "%s"', (text) => {
     expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('unclear');
   });
 
-  it('texto só vale logo após a pergunta de confirmação; o botão vale enquanto a ação estiver aberta', () => {
+  it('[AG-16] texto só vale logo após a pergunta de confirmação; o botão vale enquanto a ação estiver aberta', () => {
     const afterOtherReply = { acceptText: false };
     expect(interpretConfirmation(PENDING, { text: 'sim' }, afterOtherReply)).toBe('unclear');
     expect(
@@ -54,7 +54,7 @@ describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', ()
     ).toBe('confirm');
   });
 
-  it('aceita os botões somente da confirmação atual', () => {
+  it('[AG-16] aceita os botões somente da confirmação atual', () => {
     expect(
       interpretConfirmation(PENDING, { buttonPayload: `CONFIRM_CANCEL:${PENDING}` }, ACCEPT_TEXT),
     ).toBe('confirm');
@@ -66,7 +66,7 @@ describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', ()
     ).toBe('unclear');
   });
 
-  it('um botão vale mais que o texto que o acompanha', () => {
+  it('[AG-16] um botão vale mais que o texto que o acompanha', () => {
     expect(
       interpretConfirmation(
         PENDING,
@@ -78,7 +78,7 @@ describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', ()
 });
 
 describe('normalizeReply', () => {
-  it('remove acentos, pontuação e emojis', () => {
+  it('[AG-16] remove acentos, pontuação e emojis', () => {
     expect(normalizeReply('  Não, OBRIGADO!!! 🙏 ')).toBe('nao obrigado');
   });
 });

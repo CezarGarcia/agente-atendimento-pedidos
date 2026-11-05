@@ -9,7 +9,7 @@ const valid = {
 };
 
 describe('loadConfig', () => {
-  it('aplica valores padrão seguros', () => {
+  it('[API-34] aplica valores padrão seguros', () => {
     expect(loadConfig(valid)).toMatchObject({
       PORT: 3001,
       NODE_ENV: 'development',
@@ -20,7 +20,7 @@ describe('loadConfig', () => {
     });
   });
 
-  it('falha rápido listando as variáveis inválidas, sem expor valores', () => {
+  it('[API-34] falha rápido listando as variáveis inválidas, sem expor valores', () => {
     const attempt = () =>
       loadConfig({ ...valid, DATABASE_URL: 'mysql://topsecret@host/db', ORDERS_API_KEYS: 'curta' });
     expect(attempt).toThrow(ConfigError);
@@ -29,7 +29,7 @@ describe('loadConfig', () => {
     expect(attempt).not.toThrow(/topsecret/);
   });
 
-  it('valida o segredo de cada chave, e não a entrada inteira', () => {
+  it('[API-35] valida o segredo de cada chave, e não a entrada inteira', () => {
     expect(() =>
       loadConfig({ ...valid, ORDERS_API_KEYS: 'agent-service-with-long-name:ab' }),
     ).toThrow(/16 caracteres/);
@@ -38,7 +38,7 @@ describe('loadConfig', () => {
     );
   });
 
-  it('recusa segredos de desenvolvimento em produção', () => {
+  it('[API-36] recusa segredos de desenvolvimento em produção', () => {
     expect(() => loadConfig({ ...valid, NODE_ENV: 'production' })).toThrow(/change-me/);
     expect(
       loadConfig({
@@ -50,7 +50,7 @@ describe('loadConfig', () => {
     ).toBe('production');
   });
 
-  it('impede habilitar rotas de demonstração em produção', () => {
+  it('[API-36] impede habilitar rotas de demonstração em produção', () => {
     expect(() => loadConfig({ ...valid, NODE_ENV: 'production', DEMO_MODE: 'true' })).toThrow(
       /DEMO_MODE/,
     );

@@ -99,7 +99,7 @@ async function startCancellation(ctx: ReturnType<typeof setup>): Promise<string>
 }
 
 describe('regra 1 — consulta de status com dados da API principal e do catálogo', () => {
-  it('consulta o pedido e entrega ao modelo dados formatados, sem identificadores internos', async () => {
+  it('[AG-01] consulta o pedido e entrega ao modelo dados formatados, sem identificadores internos', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('consultar_pedido', { numero_pedido: '100101' }),
@@ -131,7 +131,7 @@ describe('regra 1 — consulta de status com dados da API principal e do catálo
     expect(JSON.stringify(ctx.model.requests)).not.toContain(PHONES.ana);
   });
 
-  it('segue atendendo quando o catálogo externo está fora do ar (degradação)', async () => {
+  it('[AG-02] segue atendendo quando o catálogo externo está fora do ar (degradação)', async () => {
     const ctx = setup();
     ctx.catalog.available = false;
     ctx.model.script(
@@ -157,7 +157,7 @@ describe('regra 1 — consulta de status com dados da API principal e do catálo
     });
   });
 
-  it('o modelo não acessa pedidos de outro cliente: a identidade vem do canal', async () => {
+  it('[AG-03] o modelo não acessa pedidos de outro cliente: a identidade vem do canal', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('consultar_pedido', { numero_pedido: '100101' }),
@@ -172,7 +172,7 @@ describe('regra 1 — consulta de status com dados da API principal e do catálo
 });
 
 describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', () => {
-  it('fluxo completo: pede confirmação, cancela com "sim" e informa o resultado da API', async () => {
+  it('[AG-04] fluxo completo: pede confirmação, cancela com "sim" e informa o resultado da API', async () => {
     const ctx = setup();
     const pendingId = await startCancellation(ctx);
 
@@ -193,7 +193,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     });
   });
 
-  it('a pergunta de confirmação é determinística e traz botões presos à ação pendente', async () => {
+  it('[AG-05] a pergunta de confirmação é determinística e traz botões presos à ação pendente', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('solicitar_cancelamento', { numero_pedido: '100101', motivo: 'comprei errado' }),
@@ -208,14 +208,14 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     expect(message?.quickReplies?.map((q) => q.title)).toEqual(['Sim, cancelar', 'Não, manter']);
   });
 
-  it('confirma pelo botão', async () => {
+  it('[AG-06] confirma pelo botão', async () => {
     const ctx = setup();
     const pendingId = await startCancellation(ctx);
     await ctx.press(`${CONFIRM_PAYLOAD_PREFIX}${pendingId}`, 'Sim, cancelar');
     expect(ctx.orders.cancelCalls).toHaveLength(1);
   });
 
-  it('"não" mantém o pedido', async () => {
+  it('[AG-07] "não" mantém o pedido', async () => {
     const ctx = setup();
     const pendingId = await startCancellation(ctx);
     const reply = await ctx.press(`${DECLINE_PAYLOAD_PREFIX}${pendingId}`, 'Não, manter');
@@ -225,7 +225,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     expect(ctx.store.pendingActions.get(pendingId)?.status).toBe('declined');
   });
 
-  it('resposta ambígua não cancela: o modelo recebe o estado pendente e pede clareza', async () => {
+  it('[AG-08] resposta ambígua não cancela: o modelo recebe o estado pendente e pede clareza', async () => {
     const ctx = setup();
     await startCancellation(ctx);
     ctx.model.script(llm.reply('Para cancelar, responda SIM. Para manter o pedido, responda NÃO.'));
@@ -237,7 +237,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     expect(notes).toContain('confirmação de cancelamento pendente para o pedido 100101');
   });
 
-  it('confirmar na mesma mensagem que pede o cancelamento não vale (a confirmação é do turno seguinte)', async () => {
+  it('[AG-09] confirmar na mesma mensagem que pede o cancelamento não vale (a confirmação é do turno seguinte)', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('solicitar_cancelamento', { numero_pedido: '100101', motivo: null }),
@@ -248,7 +248,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     expect(reply.messages[0]?.quickReplies).toHaveLength(2);
   });
 
-  it('pedido enviado: a ferramenta recusa e nenhuma confirmação é criada', async () => {
+  it('[AG-10] pedido enviado: a ferramenta recusa e nenhuma confirmação é criada', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('solicitar_cancelamento', { numero_pedido: '100102', motivo: null }),
@@ -267,7 +267,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     expect(textOf(reply)).toContain('não consigo cancelá-lo');
   });
 
-  it('se o pedido for enviado entre a pergunta e a confirmação, a API recusa e o agente informa (corrida)', async () => {
+  it('[AG-11] se o pedido for enviado entre a pergunta e a confirmação, a API recusa e o agente informa (corrida)', async () => {
     const ctx = setup();
     await startCancellation(ctx);
     ctx.orders.setStatus('100101', 'SHIPPED');
@@ -279,7 +279,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     expect(textOf(reply)).not.toMatch(/foi cancelado/);
   });
 
-  it('confirmação expirada não é executada', async () => {
+  it('[AG-12] confirmação expirada não é executada', async () => {
     const ctx = setup();
     const pendingId = await startCancellation(ctx);
     ctx.clock.advance(11 * MINUTE);
@@ -296,7 +296,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     );
   });
 
-  it('uma nova solicitação substitui a anterior: o botão antigo deixa de valer', async () => {
+  it('[AG-13] uma nova solicitação substitui a anterior: o botão antigo deixa de valer', async () => {
     const ctx = setup();
     const first = await startCancellation(ctx);
     ctx.model.script(
@@ -312,7 +312,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
 });
 
 describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca vira sucesso', () => {
-  it('bloqueia o modelo quando ele afirma um cancelamento que não aconteceu (alucinação)', async () => {
+  it('[AG-17] bloqueia o modelo quando ele afirma um cancelamento que não aconteceu (alucinação)', async () => {
     const ctx = setup();
     ctx.model.script(llm.reply('Prontinho, Ana! Seu pedido 100101 foi cancelado com sucesso. ✅'));
 
@@ -329,7 +329,7 @@ describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca v
     );
   });
 
-  it('permite afirmar "cancelado" quando a própria API mostrou o status', async () => {
+  it('[AG-18] permite afirmar "cancelado" quando a própria API mostrou o status', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('consultar_pedido', { numero_pedido: '100202' }),
@@ -338,7 +338,7 @@ describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca v
     expect(textOf(await ctx.send('e o 100202?'))).toContain('já está cancelado');
   });
 
-  it('erro técnico na execução: informa resultado incerto e repete com a MESMA chave de idempotência', async () => {
+  it('[AG-19] erro técnico na execução: informa resultado incerto e repete com a MESMA chave de idempotência', async () => {
     const ctx = setup();
     const pendingId = await startCancellation(ctx);
     ctx.orders.cancelThenLoseResponse(); // a API cancelou, mas a resposta se perdeu
@@ -356,7 +356,7 @@ describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca v
     expect(textOf(retry)).toContain('foi cancelado');
   });
 
-  it('API de pedidos fora do ar: o modelo recebe erro técnico e não pode afirmar nada', async () => {
+  it('[AG-23] API de pedidos fora do ar: o modelo recebe erro técnico e não pode afirmar nada', async () => {
     const ctx = setup();
     ctx.orders.failing.add('get');
     ctx.model.script(
@@ -369,7 +369,7 @@ describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca v
     expect(textOf(reply)).not.toMatch(/foi cancelado/);
   });
 
-  it('modelo indisponível: resposta segura, sem quebrar a conversa', async () => {
+  it('[AG-26] modelo indisponível: resposta segura, sem quebrar a conversa', async () => {
     const ctx = setup();
     ctx.model.script(llm.fail('overloaded'));
     const reply = await ctx.send('oi');
@@ -380,7 +380,7 @@ describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca v
   });
 
   it.each(['max_tokens', 'refusal'] as const)(
-    'parada "%s" do modelo resulta em resposta segura',
+    '[AG-26] parada "%s" do modelo resulta em resposta segura',
     async (stop) => {
       const ctx = setup();
       ctx.model.script(llm.stop(stop));
@@ -388,7 +388,7 @@ describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca v
     },
   );
 
-  it('limita as iterações do modelo (laço de ferramentas não termina)', async () => {
+  it('[AG-27] limita as iterações do modelo (laço de ferramentas não termina)', async () => {
     const ctx = setup();
     ctx.model.script(...Array.from({ length: 4 }, () => llm.callTool('listar_pedidos', {})));
     const reply = await ctx.send('meus pedidos');
@@ -396,7 +396,7 @@ describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca v
     expect(textOf(reply)).toContain('com segurança');
   });
 
-  it('identificação indisponível (API fora do ar) não chama o modelo', async () => {
+  it('[AG-28] identificação indisponível (API fora do ar) não chama o modelo', async () => {
     const ctx = setup();
     ctx.orders.failing.add('customer');
     const reply = await ctx.send('oi');
@@ -406,7 +406,7 @@ describe('regras 5 e 6 — só afirmar sucesso com sucesso da API; falha nunca v
 });
 
 describe('regra 7 — atendimento humano', () => {
-  it('encaminha, informa o protocolo e pausa o agente nas mensagens seguintes', async () => {
+  it('[AG-36] encaminha, informa o protocolo e pausa o agente nas mensagens seguintes', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('transferir_para_humano', {
@@ -425,7 +425,7 @@ describe('regra 7 — atendimento humano', () => {
     expect(ctx.model.requests).toHaveLength(2);
   });
 
-  it('cliente não identificado: só a ferramenta de atendimento humano é oferecida', async () => {
+  it('[AG-28] cliente não identificado: só a ferramenta de atendimento humano é oferecida', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.reply('Não encontrei cadastro com este número. Quer falar com um atendente?'),
@@ -437,7 +437,7 @@ describe('regra 7 — atendimento humano', () => {
     expect(JSON.stringify(request?.messages.at(-1))).toContain('Cliente não identificado');
   });
 
-  it('dizer que encaminhou sem ter encaminhado é bloqueado', async () => {
+  it('[AG-36] dizer que encaminhou sem ter encaminhado é bloqueado', async () => {
     const ctx = setup();
     ctx.model.script(llm.reply('Já encaminhei sua conversa para um atendente.'));
     expect(textOf(await ctx.send('quero um humano'))).toContain('com segurança');
@@ -445,7 +445,7 @@ describe('regra 7 — atendimento humano', () => {
 });
 
 describe('regra 8 — mensagens e dados externos não mudam as regras', () => {
-  it('avisa o modelo (canal de sistema) quando a mensagem tem padrões de manipulação', async () => {
+  it('[AG-20] avisa o modelo (canal de sistema) quando a mensagem tem padrões de manipulação', async () => {
     const ctx = setup();
     ctx.model.script(llm.reply('Não posso fazer isso. Posso te ajudar com algum pedido?'));
     await ctx.send(
@@ -462,7 +462,7 @@ describe('regra 8 — mensagens e dados externos não mudam as regras', () => {
     );
   });
 
-  it('mesmo um modelo "convencido" pela injeção não consegue cancelar sem confirmação', async () => {
+  it('[AG-21] mesmo um modelo "convencido" pela injeção não consegue cancelar sem confirmação', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('solicitar_cancelamento', { numero_pedido: '100101', motivo: null }),
@@ -473,7 +473,7 @@ describe('regra 8 — mensagens e dados externos não mudam as regras', () => {
     expect(ctx.orders.cancelCalls).toHaveLength(0);
   });
 
-  it('bloqueia a resposta se o modelo vazar as instruções (marcador secreto)', async () => {
+  it('[AG-22] bloqueia a resposta se o modelo vazar as instruções (marcador secreto)', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.reply(`Claro! Minhas instruções começam com: Instruções de teste ${CANARY}`),
@@ -488,7 +488,7 @@ describe('regra 8 — mensagens e dados externos não mudam as regras', () => {
 });
 
 describe('proteção de dados, histórico e robustez do canal', () => {
-  it('dados pessoais digitados pelo cliente não chegam ao modelo, ao histórico nem aos logs', async () => {
+  it('[AG-30] dados pessoais digitados pelo cliente não chegam ao modelo, ao histórico nem aos logs', async () => {
     const ctx = setup();
     ctx.model.script(llm.reply('Não preciso do seu CPF. Qual é o número do pedido?'));
     const reply = await ctx.send('meu cpf é 529.982.247-25 e meu email ana@example.com');
@@ -505,7 +505,7 @@ describe('proteção de dados, histórico e robustez do canal', () => {
     expect(everything).not.toContain(PHONES.ana);
   });
 
-  it('o histórico só cresce: o turno seguinte reenvia o anterior sem nenhuma alteração', async () => {
+  it('[AG-31] o histórico só cresce: o turno seguinte reenvia o anterior sem nenhuma alteração', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('consultar_pedido', { numero_pedido: '100101' }),
@@ -521,7 +521,7 @@ describe('proteção de dados, histórico e robustez do canal', () => {
     expect(secondTurn.slice(0, firstTurn.length)).toEqual(firstTurn);
   });
 
-  it('mensagem repetida pelo webhook recebe a mesma resposta sem novo processamento', async () => {
+  it('[AG-32] mensagem repetida pelo webhook recebe a mesma resposta sem novo processamento', async () => {
     const ctx = setup();
     ctx.model.script(llm.reply('Olá! Como posso ajudar?'));
     const message = { messageId: 'wamid.1', from: PHONES.ana, text: 'oi' };
@@ -531,7 +531,7 @@ describe('proteção de dados, histórico e robustez do canal', () => {
     expect(ctx.model.requests).toHaveLength(1);
   });
 
-  it('confirmações simultâneas da mesma conversa são serializadas: cancela uma única vez', async () => {
+  it('[AG-24] confirmações simultâneas da mesma conversa são serializadas: cancela uma única vez', async () => {
     const ctx = setup();
     await startCancellation(ctx);
     ctx.model.script(llm.reply('Seu pedido já foi tratado.'));
@@ -539,14 +539,14 @@ describe('proteção de dados, histórico e robustez do canal', () => {
     expect(ctx.orders.cancelCalls).toHaveLength(1);
   });
 
-  it('mensagem longa demais é recusada sem custo de modelo', async () => {
+  it('[AG-29] mensagem longa demais é recusada sem custo de modelo', async () => {
     const ctx = setup();
     const reply = await ctx.send('a'.repeat(1_500));
     expect(textOf(reply)).toContain('longa');
     expect(ctx.model.requests).toHaveLength(0);
   });
 
-  it('registra o turno com custo, caminho de decisão e versão do prompt', async () => {
+  it('[AG-37] registra o turno com custo, caminho de decisão e versão do prompt', async () => {
     const ctx = setup();
     ctx.model.script(llm.reply('Olá!'));
     await ctx.send('oi');
@@ -563,8 +563,8 @@ describe('proteção de dados, histórico e robustez do canal', () => {
   });
 });
 
-describe('achados da revisão adversarial', () => {
-  it('um "sim" que responde a outra pergunta não confirma um cancelamento antigo', async () => {
+describe('casos de borda da confirmação, do histórico e da saída', () => {
+  it('[AG-14] um "sim" que responde a outra pergunta não confirma um cancelamento antigo', async () => {
     const ctx = setup();
     const pendingId = await startCancellation(ctx);
     ctx.model.script(
@@ -582,7 +582,7 @@ describe('achados da revisão adversarial', () => {
     expect(ctx.orders.cancelCalls).toHaveLength(1);
   });
 
-  it('pergunta ("pode?") não confirma', async () => {
+  it('[AG-15] pergunta ("pode?") não confirma', async () => {
     const ctx = setup();
     await startCancellation(ctx);
     ctx.model.script(llm.reply('Pode sim! Use o botão "Sim, cancelar" para confirmar.'));
@@ -590,7 +590,7 @@ describe('achados da revisão adversarial', () => {
     expect(ctx.orders.cancelCalls).toHaveLength(0);
   });
 
-  it('botão com texto vazio usa o título; mensagem vazia nunca entra no histórico', async () => {
+  it('[AG-35] botão com texto vazio usa o título; mensagem vazia nunca entra no histórico', async () => {
     const ctx = setup();
     const pendingId = await startCancellation(ctx);
     await ctx.agent.handle({
@@ -608,7 +608,7 @@ describe('achados da revisão adversarial', () => {
     expect(history.map((entry) => entry.displayText)).toContain('Não, manter');
   });
 
-  it('confirmação e recusa simultâneas (duas instâncias): só uma vence', async () => {
+  it('[AG-24] confirmação e recusa simultâneas (duas instâncias): só uma vence', async () => {
     const ctx = setup();
     const pendingId = await startCancellation(ctx);
     // segunda instância do serviço, mesmo banco (sem compartilhar o lock em memória)
@@ -635,7 +635,7 @@ describe('achados da revisão adversarial', () => {
     expect(ctx.orders.cancelCalls.length).toBeLessThanOrEqual(1);
   });
 
-  it('resultado incerto que expira não é descrito como "nada foi cancelado"', async () => {
+  it('[AG-25] resultado incerto que expira não é descrito como "nada foi cancelado"', async () => {
     const ctx = setup();
     await startCancellation(ctx);
     ctx.orders.cancelThenLoseResponse();
@@ -649,7 +649,7 @@ describe('achados da revisão adversarial', () => {
     expect(note).not.toContain('nada foi cancelado');
   });
 
-  it('o mesmo prompt gera o mesmo texto de instruções entre reinícios (canary determinístico)', async () => {
+  it('[AG-33] o mesmo prompt gera o mesmo texto de instruções entre reinícios (canary determinístico)', async () => {
     const { loadSystemPrompt } = await import('./prompt.js');
     const first = loadSystemPrompt('segredo-de-teste-123456');
     const restarted = loadSystemPrompt('segredo-de-teste-123456');
@@ -657,7 +657,7 @@ describe('achados da revisão adversarial', () => {
     expect(loadSystemPrompt('outro-segredo-123456').canary).not.toBe(first.canary);
   });
 
-  it('mudança de prompt/modelo reinicia a conversa em vez de reenviar raciocínio antigo', async () => {
+  it('[AG-33] mudança de prompt/modelo reinicia a conversa em vez de reenviar raciocínio antigo', async () => {
     const ctx = setup();
     ctx.model.script(llm.reply('Olá!'));
     const first = await ctx.send('oi');
@@ -674,7 +674,7 @@ describe('achados da revisão adversarial', () => {
     expect(second.conversationId).not.toBe(first.conversationId);
   });
 
-  it('API do modelo recusando a requisição (400) encerra a conversa para a próxima recomeçar', async () => {
+  it('[AG-33] API do modelo recusando a requisição (400) encerra a conversa para a próxima recomeçar', async () => {
     const ctx = setup();
     ctx.model.script(llm.fail('bad_request'), llm.reply('Olá!'));
     const failed = await ctx.send('oi');
@@ -683,7 +683,7 @@ describe('achados da revisão adversarial', () => {
     expect(next.conversationId).not.toBe(failed.conversationId);
   });
 
-  it('se o turno falhar depois de criar a confirmação, ela é invalidada (o cliente não a viu)', async () => {
+  it('[AG-34] se o turno falhar depois de criar a confirmação, ela é invalidada (o cliente não a viu)', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('solicitar_cancelamento', { numero_pedido: '100101', motivo: null }),
@@ -707,7 +707,7 @@ describe('achados da revisão adversarial', () => {
     expect(statuses).toEqual(['superseded']);
   });
 
-  it('status cancelado vindo da listagem pode ser afirmado pelo modelo', async () => {
+  it('[AG-18] status cancelado vindo da listagem pode ser afirmado pelo modelo', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('listar_pedidos', {}),
@@ -717,7 +717,7 @@ describe('achados da revisão adversarial', () => {
     expect(textOf(reply)).toContain('100202 está cancelado');
   });
 
-  it('listagem com um pedido cancelado não autoriza "seu pedido foi cancelado" sem número', async () => {
+  it('[AG-17] listagem com um pedido cancelado não autoriza "seu pedido foi cancelado" sem número', async () => {
     const ctx = setup();
     ctx.model.script(
       llm.callTool('listar_pedidos', {}),
@@ -734,7 +734,7 @@ describe('achados da revisão adversarial', () => {
     );
   });
 
-  it('título malicioso do catálogo aparece entre aspas e não vira instrução na confirmação', async () => {
+  it('[AG-05] título malicioso do catálogo aparece entre aspas e não vira instrução na confirmação', async () => {
     const ctx = setup();
     ctx.catalog.products.set(1, {
       id: 1,

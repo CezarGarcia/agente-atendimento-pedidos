@@ -29,7 +29,7 @@ afterAll(async () => {
 });
 
 describe('falha técnica da dependência (banco fora do ar)', () => {
-  it('responde 503 SERVICE_UNAVAILABLE com Retry-After, sem vazar detalhes internos', async () => {
+  it('[API-24] responde 503 SERVICE_UNAVAILABLE com Retry-After, sem vazar detalhes internos', async () => {
     const res = await request(app)
       .get(`/v1/customers/${ANA}/orders/100101`)
       .set('x-api-key', AGENT_KEY);
@@ -40,12 +40,12 @@ describe('falha técnica da dependência (banco fora do ar)', () => {
     expect(JSON.stringify(res.body)).not.toMatch(/ECONNREFUSED|127\.0\.0\.1|stack/);
   });
 
-  it('readiness reporta indisponibilidade', async () => {
+  it('[API-33] readiness reporta indisponibilidade', async () => {
     const res = await request(app).get('/health/ready');
     expect(res.status).toBe(503);
   });
 
-  it('cancelamento com banco fora do ar não é reportado como sucesso', async () => {
+  it('[API-24] cancelamento com banco fora do ar não é reportado como sucesso', async () => {
     const res = await request(app)
       .post(`/v1/customers/${ANA}/orders/100101/cancellation`)
       .set('x-api-key', AGENT_KEY)
@@ -55,7 +55,7 @@ describe('falha técnica da dependência (banco fora do ar)', () => {
 });
 
 describe('falhas transitórias com o banco no ar', () => {
-  it('sobrevive quando o banco derruba conexões ociosas (restart/failover)', async () => {
+  it('[API-28] sobrevive quando o banco derruba conexões ociosas (restart/failover)', async () => {
     const database = await createTestDatabase();
     await resetData(database.db);
     const healthyApp = buildApp(database.db);
@@ -78,7 +78,7 @@ describe('falhas transitórias com o banco no ar', () => {
     await database.destroy();
   });
 
-  it('não segura a requisição indefinidamente esperando o lock de um pedido (503)', async () => {
+  it('[API-29] não segura a requisição indefinidamente esperando o lock de um pedido (503)', async () => {
     const database = await createTestDatabase();
     await resetData(database.db);
     const lockedApp = buildApp(database.db);
@@ -107,7 +107,7 @@ describe('falhas transitórias com o banco no ar', () => {
 });
 
 describe('limite de requisições', () => {
-  it('é contado por cliente final: um cliente não esgota a cota dos outros', async () => {
+  it('[API-30] é contado por cliente final: um cliente não esgota a cota dos outros', async () => {
     const database = await createTestDatabase();
     await resetData(database.db);
     const limitedApp = buildApp(database.db, undefined, { rateLimitPerMinute: 2 });

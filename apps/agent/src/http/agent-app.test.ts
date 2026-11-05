@@ -76,7 +76,7 @@ const webhook = (app: ReturnType<typeof setup>['app'], body: object, signature?:
 };
 
 describe('webhook do canal de mensagens', () => {
-  it('processa mensagem com assinatura HMAC válida', async () => {
+  it('[HT-01] processa mensagem com assinatura HMAC válida', async () => {
     const { app, model } = setup();
     model.script(llm.reply('Olá! Como posso ajudar?'));
     const res = await webhook(app, { messageId: 'wamid.1', from: PHONES.ana, text: 'oi' });
@@ -86,7 +86,7 @@ describe('webhook do canal de mensagens', () => {
     expect(res.body.correlationId).toBe(res.headers['x-correlation-id']);
   });
 
-  it('recusa assinatura inválida ou ausente sem processar a mensagem', async () => {
+  it('[HT-02] recusa assinatura inválida ou ausente sem processar a mensagem', async () => {
     const { app, model } = setup();
     const body = { messageId: 'wamid.2', from: PHONES.ana, text: 'cancela o 100101' };
     expect((await webhook(app, body, 'sha256=00')).status).toBe(401);
@@ -98,14 +98,14 @@ describe('webhook do canal de mensagens', () => {
     [{ messageId: 'x', from: '51999', text: 'oi' }],
     [{ messageId: 'x', from: PHONES.ana }],
     [{ messageId: 'x', from: PHONES.ana, text: 'oi', admin: true }],
-  ])('valida o payload %#', async (body) => {
+  ])('[HT-03] valida o payload %#', async (body) => {
     const { app } = setup();
     const res = await webhook(app, body);
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
 
-  it('reentrega do mesmo webhook devolve a mesma resposta sem novo processamento', async () => {
+  it('[HT-04] reentrega do mesmo webhook devolve a mesma resposta sem novo processamento', async () => {
     const { app, model } = setup();
     model.script(llm.reply('Olá!'));
     const body = { messageId: 'wamid.3', from: PHONES.ana, text: 'oi' };
@@ -117,7 +117,7 @@ describe('webhook do canal de mensagens', () => {
 });
 
 describe('API do simulador (modo demonstração)', () => {
-  it('liga e desliga falhas simuladas e as reflete no estado', async () => {
+  it('[HT-05] liga e desliga falhas simuladas e as reflete no estado', async () => {
     const { app, chaos } = setup();
     const res = await request(app).put('/simulator/chaos').send({ ordersApiDown: true });
     expect(res.body.chaos).toEqual({ ordersApiDown: true, catalogDown: false, llmDown: false });
@@ -125,7 +125,7 @@ describe('API do simulador (modo demonstração)', () => {
     expect((await request(app).put('/simulator/chaos').send({ hack: true })).status).toBe(400);
   });
 
-  it('envia mensagens pelo mesmo fluxo do webhook e devolve o trace do turno', async () => {
+  it('[HT-05] envia mensagens pelo mesmo fluxo do webhook e devolve o trace do turno', async () => {
     const { app, model } = setup();
     model.script(llm.reply('Olá!'));
     const res = await request(app)

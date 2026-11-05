@@ -3,17 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { addContextFields, getContext, resolveCorrelationId, runWithContext } from './context.js';
 
 describe('contexto de correlação', () => {
-  it('aceita um correlation id bem formado vindo de fora', () => {
+  it('[SH-05] aceita um correlation id bem formado vindo de fora', () => {
     expect(resolveCorrelationId('abc-12345678')).toBe('abc-12345678');
   });
 
-  it('gera um novo id quando o recebido é inválido (evita log injection)', () => {
+  it('[SH-05] gera um novo id quando o recebido é inválido (evita log injection)', () => {
     const generated = resolveCorrelationId('x\n{"level":"fatal"}');
     expect(generated).toMatch(/^[0-9a-f-]{36}$/);
     expect(resolveCorrelationId(undefined)).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it('isola o contexto entre execuções assíncronas concorrentes', async () => {
+  it('[SH-05] isola o contexto entre execuções assíncronas concorrentes', async () => {
     const observed: string[] = [];
     await Promise.all(
       ['a', 'b'].map((id) =>

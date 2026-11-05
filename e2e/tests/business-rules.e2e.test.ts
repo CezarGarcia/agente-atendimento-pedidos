@@ -12,7 +12,7 @@ beforeEach(async () => {
 });
 
 describe('regras de negócio, ponta a ponta', () => {
-  it('consulta status com dados da API principal e nomes do catálogo externo', async () => {
+  it('[E2E-B01] consulta status com dados da API principal e nomes do catálogo externo', async () => {
     const ana = customer(PERSONAS.ana.phone);
     const reply = await ana.say('Qual o status do pedido 100101?');
     expect(textOf(reply)).toContain('em processamento');
@@ -20,7 +20,7 @@ describe('regras de negócio, ponta a ponta', () => {
     expect(textOf(reply)).toContain('Fjallraven');
   });
 
-  it('cancela somente após confirmação explícita e informa o resultado da API', async () => {
+  it('[E2E-B02] cancela somente após confirmação explícita e informa o resultado da API', async () => {
     const ana = customer(PERSONAS.ana.phone);
     const confirmation = await ana.say('Quero cancelar o pedido 100101');
     const confirmButton = confirmation.messages[0]?.quickReplies?.[0];
@@ -33,7 +33,7 @@ describe('regras de negócio, ponta a ponta', () => {
     expect(await orderStatus(PERSONAS.ana.customerId, '100101')).toBe('CANCELLED');
   });
 
-  it('pedido enviado não é cancelado e o agente oferece atendimento humano', async () => {
+  it('[E2E-B03] pedido enviado não é cancelado e o agente oferece atendimento humano', async () => {
     const ana = customer(PERSONAS.ana.phone);
     const reply = await ana.say('Cancela o pedido 100102');
     expect(textOf(reply)).toContain('já foi enviado');
@@ -42,14 +42,14 @@ describe('regras de negócio, ponta a ponta', () => {
     expect(await orderStatus(PERSONAS.ana.customerId, '100102')).toBe('SHIPPED');
   });
 
-  it('pedido aguardando pagamento não é cancelado pelo fluxo automatizado', async () => {
+  it('[E2E-B04] pedido aguardando pagamento não é cancelado pelo fluxo automatizado', async () => {
     const carla = customer(PERSONAS.carla.phone);
     const reply = await carla.say('Quero cancelar o pedido 100301');
     expect(textOf(reply)).toContain('aguarda pagamento');
     expect(await orderStatus(PERSONAS.carla.customerId, '100301')).toBe('AWAITING_PAYMENT');
   });
 
-  it('se o pedido for despachado entre a pergunta e o "sim", a API recusa e o agente informa', async () => {
+  it('[E2E-B05] se o pedido for despachado entre a pergunta e o "sim", a API recusa e o agente informa', async () => {
     const bruno = customer(PERSONAS.bruno.phone);
     const confirmation = await bruno.say('Quero cancelar o pedido 100201');
     await simulator('/demo/orders/100201/ship');
@@ -61,7 +61,7 @@ describe('regras de negócio, ponta a ponta', () => {
     expect(await orderStatus(PERSONAS.bruno.customerId, '100201')).toBe('SHIPPED');
   });
 
-  it('"não" mantém o pedido', async () => {
+  it('[E2E-B06] "não" mantém o pedido', async () => {
     const bruno = customer(PERSONAS.bruno.phone);
     await bruno.say('Quero cancelar o pedido 100201');
     const reply = await bruno.say('não');
@@ -69,7 +69,7 @@ describe('regras de negócio, ponta a ponta', () => {
     expect(await orderStatus(PERSONAS.bruno.customerId, '100201')).toBe('PROCESSING');
   });
 
-  it('atendimento humano gera protocolo e pausa o agente', async () => {
+  it('[E2E-B07] atendimento humano gera protocolo e pausa o agente', async () => {
     const ana = customer(PERSONAS.ana.phone);
     const reply = await ana.say('Quero falar com um atendente');
     expect(textOf(reply)).toMatch(/ATD-\d{6}/);

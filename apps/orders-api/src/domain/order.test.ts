@@ -19,7 +19,7 @@ const baseOrder: Order = {
 };
 
 describe('evaluateCancellation (regras 2 e 3)', () => {
-  it('permite cancelar somente pedidos em processamento', () => {
+  it('[API-01] permite cancelar somente pedidos em processamento', () => {
     expect(evaluateCancellation('PROCESSING')).toEqual({ eligible: true });
   });
 
@@ -28,11 +28,11 @@ describe('evaluateCancellation (regras 2 e 3)', () => {
     ['DELIVERED', 'ALREADY_DELIVERED'],
     ['CANCELLED', 'ALREADY_CANCELLED'],
     ['AWAITING_PAYMENT', 'PAYMENT_PENDING'],
-  ])('bloqueia pedido %s com motivo %s', (status, reason) => {
+  ])('[API-02] bloqueia pedido %s com motivo %s', (status, reason) => {
     expect(evaluateCancellation(status)).toEqual({ eligible: false, reason });
   });
 
-  it('nega por padrão qualquer status desconhecido (allowlist)', () => {
+  it('[API-03] nega por padrão qualquer status desconhecido (allowlist)', () => {
     expect(evaluateCancellation('RETURNED')).toEqual({ eligible: false, reason: 'UNKNOWN_STATUS' });
     expect(evaluateCancellation('processing')).toEqual({
       eligible: false,
@@ -44,7 +44,7 @@ describe('evaluateCancellation (regras 2 e 3)', () => {
 describe('cancelOrder', () => {
   const now = new Date('2026-11-05T12:00:00Z');
 
-  it('cancela pedido em processamento registrando data e motivo', () => {
+  it('[API-04] cancela pedido em processamento registrando data e motivo', () => {
     const result = cancelOrder(baseOrder, now, 'comprei errado');
     expect(result).toEqual({
       ok: true,
@@ -59,12 +59,12 @@ describe('cancelOrder', () => {
     });
   });
 
-  it('não altera o pedido original (transição pura)', () => {
+  it('[API-04] não altera o pedido original (transição pura)', () => {
     cancelOrder(baseOrder, now, null);
     expect(baseOrder.status).toBe('PROCESSING');
   });
 
-  it('recusa cancelar pedido enviado', () => {
+  it('[API-02] recusa cancelar pedido enviado', () => {
     expect(cancelOrder({ ...baseOrder, status: 'SHIPPED' }, now, null)).toEqual({
       ok: false,
       reason: 'ALREADY_SHIPPED',
@@ -73,7 +73,7 @@ describe('cancelOrder', () => {
 });
 
 describe('firstName', () => {
-  it('extrai apenas o primeiro nome (minimização de dados)', () => {
+  it('[API-06] extrai apenas o primeiro nome (minimização de dados)', () => {
     expect(firstName('  Ana Paula Souza ')).toBe('Ana');
   });
 });
