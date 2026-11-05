@@ -20,5 +20,23 @@ services:
       timeout: 3s
       retries: 10
 
+  orders-api:
+    build:
+      context: .
+      dockerfile: apps/orders-api/Dockerfile
+    environment:
+      PORT: 3001
+      DATABASE_URL: postgres://orders_app:${ORDERS_DB_PASSWORD:-orders_dev_only}@postgres:5432/orders
+      ORDERS_API_KEYS: agent-service:${AGENT_ORDERS_API_KEY:-dev-agent-key-change-me},swagger:${SWAGGER_ORDERS_API_KEY:-dev-swagger-key-change-me}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_PSEUDONYM_SECRET: ${LOG_PSEUDONYM_SECRET:-dev-pseudonym-secret-change-me}
+      MIGRATE_ON_START: 'true'
+      SEED_ON_START: 'true'
+    ports:
+      - '${ORDERS_API_PORT:-3001}:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres-data:
