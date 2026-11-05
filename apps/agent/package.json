@@ -11,6 +11,19 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
+    "@testcontainers/postgresql": "12.2.1",
+    "@types/express": "5.0.6",
+    "@types/pg": "8.23.1",
+    "@types/supertest": "7.2.1",
+    "supertest": "7.3.1",
     "tsup": "9.0.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.6.0",
+    "express": "5.3.0",
+    "express-rate-limit": "8.7.3",
+    "helmet": "8.3.0",
+    "kysely": "0.29.8",
+    "pg": "8.23.1"
   }
 }
