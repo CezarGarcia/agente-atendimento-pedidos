@@ -717,6 +717,23 @@ describe('achados da revisão adversarial', () => {
     expect(textOf(reply)).toContain('100202 está cancelado');
   });
 
+  it('listagem com um pedido cancelado não autoriza "seu pedido foi cancelado" sem número', async () => {
+    const ctx = setup();
+    ctx.model.script(
+      llm.callTool('listar_pedidos', {}),
+      llm.reply('Pronto! Seu pedido foi cancelado com sucesso ✅'),
+    );
+    const reply = await ctx.send('cancela meu pedido');
+    expect(textOf(reply)).toContain('não consegui concluir minha resposta com segurança');
+    expect(ctx.orders.orders.get('100101')?.status).toBe('PROCESSING');
+    expect(ctx.lines).toContainEqual(
+      expect.objectContaining({
+        event: 'guardrail.output.blocked',
+        reasons: ['unverified_cancellation_claim'],
+      }),
+    );
+  });
+
   it('título malicioso do catálogo aparece entre aspas e não vira instrução na confirmação', async () => {
     const ctx = setup();
     ctx.catalog.products.set(1, {

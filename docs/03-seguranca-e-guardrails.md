@@ -48,20 +48,27 @@ crítico depende dela.
 
 ### Saída ([`output-guard.ts`](../apps/agent/src/guardrails/output-guard.ts))
 
-| Verificação                                                  | Ação                                                                 |
-| ------------------------------------------------------------ | -------------------------------------------------------------------- |
-| Afirmação de cancelamento não verificada pela API            | Bloqueia. Cada afirmação é conferida contra os pedidos que ela cita. |
-| Afirmação de encaminhamento sem handoff                      | Bloqueia                                                             |
-| Promessa de estorno (prazo, garantia)                        | Bloqueia (respeitando negação)                                       |
-| Canary, marcadores internos ou trecho literal das instruções | Bloqueia (vazamento de prompt)                                       |
-| Dados pessoais                                               | Mascara                                                              |
-| Links                                                        | Remove                                                               |
-| Markdown, tamanho                                            | Converte para WhatsApp e corta no fim de uma frase                   |
+| Verificação                                                  | Ação                                                                                                                                                        |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Afirmação de cancelamento não verificada pela API            | Bloqueia. Com número, confere cada pedido citado; sem número, exige exatamente um pedido consultado individualmente no turno e mostrado cancelado pela API. |
+| Afirmação de encaminhamento sem handoff                      | Bloqueia                                                                                                                                                    |
+| Promessa de estorno (prazo, garantia)                        | Bloqueia (respeitando negação)                                                                                                                              |
+| Canary, marcadores internos ou trecho literal das instruções | Bloqueia (vazamento de prompt)                                                                                                                              |
+| Dados pessoais                                               | Mascara                                                                                                                                                     |
+| Links                                                        | Remove                                                                                                                                                      |
+| Markdown, tamanho                                            | Converte para WhatsApp e corta no fim de uma frase                                                                                                          |
 
 A detecção de afirmações é deliberadamente ampla, porque os dois erros não custam o mesmo: um
 falso positivo custa uma resposta genérica, e um falso negativo custa uma informação errada sobre
 dinheiro do cliente. Negações ("não foi cancelado") e hipóteses ("pode ser cancelado", "será
 cancelado") são reconhecidas para não atrapalhar conversas normais.
+
+O modelo nunca executa um cancelamento: o sucesso é sempre anunciado por template. Por isso uma
+afirmação sem número só pode se referir a um pedido que o modelo acabou de consultar, e uma
+listagem não basta (ela não diz de qual pedido a frase fala). Além de "cancelado", entram
+sinônimos ("anulado", "o cancelamento deu certo") e consequências ("não será mais enviado", fora
+de frase condicional). A lista é finita e paráfrases criativas podem escapar; essa limitação está
+registrada em [decisões e limitações](09-decisoes-e-limitacoes.md).
 
 ### Confirmação ([`confirmation.ts`](../apps/agent/src/agent/confirmation.ts))
 

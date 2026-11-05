@@ -14,7 +14,11 @@ import { shingles } from '../agent/prompt.js';
 export interface OutputGuardContext {
   /** Pedidos que a API principal mostrou cancelados nesta conversa (consulta ou cancelamento). */
   readonly verifiedCancelledOrderIds: ReadonlySet<string>;
-  /** Subconjunto verificado no turno atual (aceita afirmações que não citam o número). */
+  /**
+   * Pedidos consultados um a um neste turno (consultar_pedido ou solicitar_cancelamento) que a API
+   * mostrou cancelados. Uma afirmação sem número só passa se houver exatamente um: uma lista de
+   * pedidos não diz a qual deles a frase se refere.
+   */
   readonly verifiedThisTurn: ReadonlySet<string>;
   readonly handoffCreated: boolean;
   /** Marcador secreto presente no prompt: se aparecer na resposta, houve vazamento. */
@@ -53,12 +57,25 @@ const INTERNAL_MARKERS = [
 
 /** Qualquer menção a algo "cancelado"/"cancelamento concluído" é tratada como afirmação. */
 const CANCELLATION_CLAIMS = [
-  /\bcancelad[oa]s?\b/g,
-  /\bcancelei\b/g,
-  /\bcancelamento\b[^.!?\n]{0,40}\b(realizado|concluido|efetuado|confirmado|feito|aprovado|processado|finalizado)\b/g,
-  /\b(was|has been|have been|is|are|got)\s+(successfully\s+)?cancell?ed\b/g,
+  /\b(cancelad|anulad)[oa]s?\b/g,
+  /\b(cancelei|cancelamos|anulei|anulamos)\b/g,
+  /\bcancelamento\b[^.!?\n]{0,40}\b(realizado|concluido|efetuado|confirmado|feito|aprovado|processado|finalizado|deu certo|com sucesso)\b/g,
+  /\b(was|were|has been|have been|is|are|got)\s+(successfully\s+)?cancell?ed\b/g,
   /\bcancell?ed\s+successfully\b/g,
+  /\bcancell?ation\b[^.!?\n]{0,40}\b(successful|complete|completed|confirmed|done|went through)\b/g,
 ];
+
+/**
+ * Consequências que só um cancelamento produz ("não será mais enviado"). Em frase condicional
+ * ("se confirmar, o pedido não será mais enviado") explicam o efeito, não afirmam o fato.
+ */
+const CANCELLATION_CONSEQUENCES = [
+  /\bnao (sera|vai ser) mais (enviad[oa]s?|entregues?|despachad[oa]s?)\b/g,
+  /\bnao vai mais (ser (enviad[oa]s?|entregues?|despachad[oa]s?)|chegar)\b/g,
+  /\b(will no longer|won't) be (shipped|delivered)\b/g,
+];
+const CONDITIONAL =
+  /\b(se|caso|quando|apos|depois que|assim que|ao (cancelar|confirmar)|com o cancelamento|if|once|after)\b/;
 
 const HANDOFF_CLAIMS = [
   /\b(transferi|encaminhei)\b/g,
@@ -74,7 +91,7 @@ const REFUND_PROMISE =
 const NEGATION_BEFORE = /\b(nao|nem|nunca|jamais|not|never)\b(\s+\S+){0,3}\s*$/;
 /** Futuro/hipótese ("será cancelado", "pode ser cancelado", "para ser cancelado"). */
 const HYPOTHETICAL_BEFORE =
-  /\b(sera|seja|for|fosse|seria|caso|se|quer|deseja|gostaria|para|pra|(pode|possa|poderia|vai|deve|precisa|consigo|posso)\s+(ser|ficar)|will be|would be|can be|to be)\b(\s+\S+){0,2}\s*$/;
+  /\b(sera|seja|for|fosse|seria|caso|se|quer|deseja|gostaria|para|pra|(pode|podem|possa|poderia|vai|vao|deve|devem|precisa|consigo|posso)\s+(ser|ficar)|will be|would be|can be|to be)\b(\s+\S+){0,2}\s*$/;
 
 const URL_PATTERN = /\b(?:https?:\/\/|www\.)\S+/gi;
 
@@ -98,27 +115,37 @@ function affirmativeMatches(text: string, patterns: readonly RegExp[]): RegExpMa
 
 const ORDER_ID = /\b\d{6}\b/g;
 
+const SENTENCE_SEPARATORS = ['.', '!', '?', '\n', ';'];
+
+function sentenceAround(text: string, index: number): { start: number; end: number } {
+  const start = Math.max(...SENTENCE_SEPARATORS.map((sep) => text.lastIndexOf(sep, index))) + 1;
+  const ends = SENTENCE_SEPARATORS.map((sep) => text.indexOf(sep, index)).filter((i) => i >= 0);
+  return { start, end: ends.length > 0 ? Math.min(...ends) : text.length };
+}
+
 /**
- * Pedidos a que uma afirmação se refere: os números na mesma frase, antes da afirmação
- * ("o pedido 100202 está cancelado e o 100101 segue…" → só 100202); se não houver, os que vêm
- * depois na frase ("cancelei o pedido 100101").
+ * Pedidos a que uma afirmação se refere, na mesma frase. Antes da afirmação: no singular, o número
+ * mais próximo ("o 100201 (em processamento) e o 100202 (cancelado)" → 100202); no plural, todos
+ * ("100101 e 100201 foram cancelados"). Sem número antes, os que vêm depois ("cancelei o 100101").
  */
-function ordersReferencedBy(text: string, index: number): string[] {
-  const start =
-    Math.max(...['.', '!', '?', '\n', ';'].map((sep) => text.lastIndexOf(sep, index))) + 1;
-  const ends = ['.', '!', '?', '\n', ';']
-    .map((sep) => text.indexOf(sep, index))
-    .filter((i) => i >= 0);
-  const end = ends.length > 0 ? Math.min(...ends) : text.length;
+function ordersReferencedBy(text: string, match: RegExpMatchArray): string[] {
+  const index = match.index ?? 0;
+  const { start, end } = sentenceAround(text, index);
   const before = text.slice(start, index).match(ORDER_ID) ?? [];
-  return before.length > 0 ? before : (text.slice(index, end).match(ORDER_ID) ?? []);
+  if (before.length > 0) return match[0].endsWith('s') ? before : before.slice(-1);
+  return text.slice(index, end).match(ORDER_ID) ?? [];
 }
 
 function cancellationClaimsAreVerified(text: string, context: OutputGuardContext): boolean {
-  return affirmativeMatches(text, CANCELLATION_CLAIMS).every((match) => {
-    const referenced = ordersReferencedBy(text, match.index ?? 0);
-    // Sem número citado, só aceitamos se a confirmação da API aconteceu neste mesmo turno.
-    if (referenced.length === 0) return context.verifiedThisTurn.size > 0;
+  const consequences = affirmativeMatches(text, CANCELLATION_CONSEQUENCES).filter((match) => {
+    const { start, end } = sentenceAround(text, match.index ?? 0);
+    return !CONDITIONAL.test(text.slice(start, end));
+  });
+  return [...affirmativeMatches(text, CANCELLATION_CLAIMS), ...consequences].every((match) => {
+    const referenced = ordersReferencedBy(text, match);
+    // O modelo nunca executa um cancelamento: uma afirmação sem número só pode se referir a um
+    // pedido que ele acabou de consultar individualmente e que a API mostrou cancelado.
+    if (referenced.length === 0) return context.verifiedThisTurn.size === 1;
     return referenced.every((id) => context.verifiedCancelledOrderIds.has(id));
   });
 }

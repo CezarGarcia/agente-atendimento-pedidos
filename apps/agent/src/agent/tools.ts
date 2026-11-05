@@ -138,7 +138,7 @@ const InputSchemas = {
 export interface TurnState {
   /** Pedidos que a API mostrou cancelados nesta conversa (inclui turnos anteriores). */
   readonly verifiedCancelledOrderIds: Set<string>;
-  /** Pedidos que a API mostrou cancelados neste turno. */
+  /** Pedidos consultados um a um neste turno que a API mostrou cancelados (listas não entram). */
   readonly verifiedThisTurn: Set<string>;
   readonly toolCalls: ToolCallTrace[];
   handoff: HandoffTicket | null;
@@ -276,8 +276,10 @@ export class ToolExecutor {
   private async listOrders(customerId: string, turn: TurnState): Promise<ToolOutcome> {
     const result = await this.deps.orders.listOrders(customerId, 5);
     if (result.kind === 'technical_error') return technicalError(result.reason);
+    // Lista confirma o status de cada número, mas não entra em verifiedThisTurn: não diz a qual
+    // pedido uma frase sem número ("seu pedido foi cancelado") se refere.
     for (const order of result.orders) {
-      if (order.status === 'CANCELLED') markCancelled(turn, order.id);
+      if (order.status === 'CANCELLED') turn.verifiedCancelledOrderIds.add(order.id);
     }
     return {
       outcome: `listados:${result.orders.length}`,

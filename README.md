@@ -9,8 +9,9 @@ determinístico e com a API principal de pedidos.
 
 > **Princípio de projeto: o modelo interpreta e conversa; o código decide e executa.**
 > Mesmo que alguém manipule o modelo por completo, ele não tem como cancelar sem a confirmação
-> explícita do cliente, não enxerga pedidos de outra pessoa e não consegue anunciar um
-> cancelamento que a API não confirmou.
+> explícita do cliente nem enxergar pedidos de outra pessoa. O aviso de cancelamento concluído é
+> uma mensagem fixa, enviada só depois que a API confirma, e o guardrail de saída bloqueia as
+> afirmações de cancelamento do modelo que a API não confirmou.
 
 ![Simulador: pedido despachado entre a pergunta de confirmação e o "sim"; a API recusa e o agente informa corretamente](docs/assets/simulador.png)
 

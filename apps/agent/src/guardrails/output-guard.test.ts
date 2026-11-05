@@ -27,6 +27,12 @@ describe('guardOutput — regra 5: afirmar cancelamento só com sucesso da API',
     'O cancelamento do #100101 foi concluído.',
     'Os pedidos 100101 e 100201 foram cancelados.',
     'Your order 100101 has been cancelled.',
+    'Seu pedido foi anulado.',
+    'O cancelamento deu certo!',
+    'Cancelamos o pedido 100101.',
+    'Pronto, seu pedido não será mais enviado.',
+    'Fique tranquilo: ele não vai mais chegar.',
+    'The cancellation went through.',
   ])('bloqueia afirmação não verificada: "%s"', (text) => {
     expect(guardOutput(text, context())).toMatchObject({
       action: 'blocked',
@@ -60,6 +66,28 @@ describe('guardOutput — regra 5: afirmar cancelamento só com sucesso da API',
     expect(guardOutput('Ele já está cancelado.', verified('100202')).action).toBe('pass');
   });
 
+  it('sem número citado, exige exatamente um pedido consultado individualmente', () => {
+    // Uma lista com um pedido cancelado não autoriza "seu pedido foi cancelado com sucesso".
+    const afterList = context({ verifiedCancelledOrderIds: new Set(['100202']) });
+    expect(guardOutput('Pronto! Seu pedido foi cancelado com sucesso ✅', afterList).action).toBe(
+      'blocked',
+    );
+    expect(guardOutput('Ele já está cancelado.', verified('100202', '100103')).action).toBe(
+      'blocked',
+    );
+  });
+
+  it('numa enumeração, a afirmação no singular vale para o número mais próximo', () => {
+    const ctx = verified('100202');
+    expect(
+      guardOutput('Você tem o pedido 100201 (em processamento) e o 100202 (cancelado).', ctx)
+        .action,
+    ).toBe('pass');
+    expect(guardOutput('O 100202 (cancelado) e o 100201, cancelado agora.', ctx).action).toBe(
+      'blocked',
+    );
+  });
+
   it.each([
     'O pedido 100102 não foi cancelado porque já foi enviado.',
     'Ainda não foi cancelado: preciso da sua confirmação.',
@@ -68,6 +96,9 @@ describe('guardOutput — regra 5: afirmar cancelamento só com sucesso da API',
     'O pedido 100102 não pode ser cancelado por aqui.',
     'Quer que ele seja cancelado?',
     'Quer que eu siga com o cancelamento?',
+    'Se você confirmar, o pedido não será mais enviado.',
+    'Ao cancelar, ele não vai mais chegar e o valor segue a política da loja.',
+    'Pedidos já enviados não podem ser cancelados.',
   ])('não confunde negação, futuro ou hipótese com afirmação: "%s"', (text) => {
     expect(guardOutput(text, context()).action).toBe('pass');
   });
