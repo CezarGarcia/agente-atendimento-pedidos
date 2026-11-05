@@ -473,7 +473,7 @@ function summarizeOrder(order: ApiOrder, products: ReadonlyMap<number, CatalogLo
 }
 
 /** Encurta títulos longos no fim de um trecho ("Mochila X, Fits 15 Laptops" → "Mochila X"). */
-function shortenTitle(title: string, max = 45): string {
+export function shortenTitle(title: string, max = 45): string {
   if (title.length <= max) return title;
   const head = title.slice(0, max);
   const comma = head.lastIndexOf(',');
