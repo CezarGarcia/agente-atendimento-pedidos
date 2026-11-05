@@ -24,7 +24,10 @@ services:
     build:
       context: .
       dockerfile: apps/orders-api/Dockerfile
+    restart: unless-stopped
     environment:
+      # Ambiente local de demonstração: segredos "change-me" só são aceitos fora de produção.
+      NODE_ENV: development
       PORT: 3001
       DATABASE_URL: postgres://orders_app:${ORDERS_DB_PASSWORD:-orders_dev_only}@postgres:5432/orders
       ORDERS_API_KEYS: agent-service:${AGENT_ORDERS_API_KEY:-dev-agent-key-change-me},swagger:${SWAGGER_ORDERS_API_KEY:-dev-swagger-key-change-me}

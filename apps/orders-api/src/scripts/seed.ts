@@ -6,10 +6,11 @@ import { resetDemoData } from '../infra/seed.js';
 
 /** Recria os dados de demonstração (apaga os pedidos existentes). */
 const config = loadConfig();
-const db = createDatabase(config.DATABASE_URL, 1);
+const logger = createLogger({ service: 'orders-api-seed' });
+const db = createDatabase(config.DATABASE_URL, { logger, maxConnections: 1 });
 try {
   await resetDemoData(db);
-  createLogger({ service: 'orders-api-seed' }).info({ event: 'db.seeded' }, 'dados recriados');
+  logger.info({ event: 'db.seeded' }, 'dados recriados');
 } finally {
   await db.destroy();
 }

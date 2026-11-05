@@ -39,7 +39,10 @@ export async function createTestDatabase(): Promise<TestDatabase> {
 
   const url = new URL(adminUrl);
   url.pathname = `/${name}`;
-  const db = createDatabase(url.toString(), 20);
+  const db = createDatabase(url.toString(), {
+    logger: createLogger({ service: 'test', level: 'silent' }),
+    maxConnections: 20,
+  });
   await migrateToLatest(db, createLogger({ service: 'test', level: 'silent' }));
 
   return {
@@ -69,7 +72,11 @@ export function captureLogger(): { logger: Logger; lines: Record<string, unknown
   return { logger: createLogger({ service: 'orders-api', destination, level: 'debug' }), lines };
 }
 
-export function buildApp(db: Kysely<Database>, logger?: Logger) {
+export function buildApp(
+  db: Kysely<Database>,
+  logger?: Logger,
+  options: { rateLimitPerMinute?: number } = {},
+) {
   const appLogger = logger ?? createLogger({ service: 'orders-api', level: 'silent' });
   const service = new OrdersService({
     ...createPostgresRepositories(db),
@@ -81,11 +88,16 @@ export function buildApp(db: Kysely<Database>, logger?: Logger) {
     service,
     logger: appLogger,
     apiKeys: [{ clientName: 'agent-service', key: AGENT_KEY }],
-    rateLimitPerMinute: 10_000,
+    rateLimitPerMinute: options.rateLimitPerMinute ?? 10_000,
     checkDatabase: async () => {
       await sql`select 1`.execute(db);
     },
   });
+}
+
+/** Conexão administrativa ao mesmo servidor do banco de teste (para simular incidentes). */
+export function adminClient(): pg.Client {
+  return new pg.Client({ connectionString: inject('postgresAdminUrl') });
 }
 
 export async function resetData(db: Kysely<Database>): Promise<void> {

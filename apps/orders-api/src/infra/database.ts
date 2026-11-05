@@ -1,6 +1,8 @@
 import { Kysely, PostgresDialect, type ColumnType, type Generated } from 'kysely';
 import pg from 'pg';
 
+import type { Logger } from '@agente/shared';
+
 import type { OrderSnapshot } from './order-mapper.js';
 
 // DATE (oid 1082) volta como string 'AAAA-MM-DD' em vez de Date à meia-noite local:
@@ -72,17 +74,31 @@ export interface Database {
   idempotency_keys: IdempotencyKeysTable;
 }
 
-export function createDatabase(connectionString: string, maxConnections = 10): Kysely<Database> {
-  return new Kysely<Database>({
-    dialect: new PostgresDialect({
-      pool: new pg.Pool({
-        connectionString,
-        max: maxConnections,
-        connectionTimeoutMillis: 5_000,
-        idleTimeoutMillis: 30_000,
-        statement_timeout: 10_000,
-        application_name: 'orders-api',
-      }),
-    }),
+export interface DatabaseOptions {
+  readonly logger: Logger;
+  readonly maxConnections?: number;
+}
+
+export function createDatabase(
+  connectionString: string,
+  options: DatabaseOptions,
+): Kysely<Database> {
+  const pool = new pg.Pool({
+    connectionString,
+    max: options.maxConnections ?? 10,
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+    statement_timeout: 10_000,
+    application_name: 'orders-api',
   });
+  // Sem este listener, uma conexão ociosa derrubada pelo banco (restart, failover,
+  // pg_terminate_backend) emite 'error' sem tratamento e encerra o processo. O pool descarta
+  // a conexão quebrada e abre outra na próxima requisição.
+  pool.on('error', (error: Error & { code?: string }) => {
+    options.logger.warn(
+      { event: 'db.pool.idle_client_error', code: error.code },
+      'conexão ociosa com o banco foi encerrada; será recriada',
+    );
+  });
+  return new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
 }

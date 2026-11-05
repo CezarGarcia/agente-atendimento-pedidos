@@ -13,6 +13,7 @@ import {
   notFound,
   rateLimiter,
   requestLogger,
+  requireJsonBody,
   type ApiClientKey,
 } from './middlewares.js';
 import { buildOpenApiDocument } from './openapi.js';
@@ -56,8 +57,9 @@ export function createApp(deps: AppDependencies): Express {
 
   const v1 = express.Router();
   v1.use(captureRouteBase);
-  v1.use(rateLimiter(deps.rateLimitPerMinute));
   v1.use(apiKeyAuth(deps.apiKeys));
+  v1.use(rateLimiter(deps.rateLimitPerMinute));
+  v1.use(requireJsonBody);
   v1.use(customersRouter(deps.service));
   v1.use(ordersRouter(deps.service));
   app.use('/v1', v1);

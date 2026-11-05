@@ -15,6 +15,7 @@ export const PROBLEM_CODES = {
   ROUTE_NOT_FOUND: { status: 404, title: 'Rota não encontrada' },
   ORDER_NOT_CANCELLABLE: { status: 409, title: 'Pedido não pode ser cancelado' },
   PAYLOAD_TOO_LARGE: { status: 413, title: 'Corpo da requisição muito grande' },
+  UNSUPPORTED_MEDIA_TYPE: { status: 415, title: 'Tipo de conteúdo não suportado' },
   IDEMPOTENCY_KEY_MISMATCH: {
     status: 422,
     title: 'Idempotency-Key já usada com outra requisição',
