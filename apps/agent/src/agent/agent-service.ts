@@ -581,6 +581,7 @@ export class AgentService {
           verifiedThisTurn: turn.verifiedThisTurn,
           handoffCreated: turn.handoff !== null,
           canary: prompt.canary,
+          ...(prompt.fingerprint ? { promptFingerprint: prompt.fingerprint } : {}),
         });
         trace.outputGuard = { action: guard.action, reasons: guard.reasons };
 

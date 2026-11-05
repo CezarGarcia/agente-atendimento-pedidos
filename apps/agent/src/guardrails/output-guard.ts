@@ -1,5 +1,7 @@
 import { redactPii } from '@agente/shared';
 
+import { shingles } from '../agent/prompt.js';
+
 /**
  * Guardrail de saída: confere a resposta do modelo ANTES de enviá-la ao cliente.
  *
@@ -17,6 +19,8 @@ export interface OutputGuardContext {
   readonly handoffCreated: boolean;
   /** Marcador secreto presente no prompt: se aparecer na resposta, houve vazamento. */
   readonly canary: string;
+  /** Sequências de 8 palavras das instruções (sem os exemplos). */
+  readonly promptFingerprint?: ReadonlySet<string>;
 }
 
 export type OutputGuardReason =
@@ -158,7 +162,11 @@ export function guardOutput(raw: string, context: OutputGuardContext): OutputGua
   if (formatted === '') return blocked('empty');
 
   const normalized = normalize(formatted);
+  const reproducesPrompt = [...shingles(formatted)].some((shingle) =>
+    context.promptFingerprint?.has(shingle),
+  );
   if (
+    reproducesPrompt ||
     formatted.includes(context.canary) ||
     INTERNAL_MARKERS.some((marker) => normalized.includes(marker))
   ) {

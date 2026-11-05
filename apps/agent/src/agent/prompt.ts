@@ -17,6 +17,37 @@ export interface SystemPrompt {
   readonly text: string;
   readonly version: string;
   readonly canary: string;
+  /** Sequências de palavras do prompt, para detectar respostas que o reproduzem literalmente. */
+  readonly fingerprint?: ReadonlySet<string>;
+}
+
+const SHINGLE_SIZE = 8;
+
+const words = (text: string): string[] =>
+  text
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+/** Janelas de 8 palavras consecutivas (shingles) de um texto normalizado. */
+export function shingles(text: string): Set<string> {
+  const tokens = words(text);
+  const result = new Set<string>();
+  for (let i = 0; i + SHINGLE_SIZE <= tokens.length; i += 1) {
+    result.add(tokens.slice(i, i + SHINGLE_SIZE).join(' '));
+  }
+  return result;
+}
+
+/**
+ * Impressão digital do prompt, sem a seção de exemplos: o modelo pode (e deve) reaproveitar as
+ * respostas-modelo dos exemplos, mas nunca reproduzir as instruções.
+ */
+export function promptFingerprint(text: string): Set<string> {
+  return shingles(text.replace(/<exemplos>[\s\S]*?<\/exemplos>/g, ' '));
 }
 
 const CANDIDATE_DIRS = ['../../prompts/', '../prompts/', './prompts/'];
@@ -33,5 +64,6 @@ export function loadSystemPrompt(canarySecret: string): SystemPrompt {
   const template = readFileSync(locatePromptFile(), 'utf8');
   const version = `system-prompt@${createHash('sha256').update(template).digest('hex').slice(0, 10)}`;
   const canary = `CANARY-${createHmac('sha256', canarySecret).update(version).digest('hex').slice(0, 12)}`;
-  return { text: template.replaceAll('{{CANARY}}', canary), version, canary };
+  const text = template.replaceAll('{{CANARY}}', canary);
+  return { text, version, canary, fingerprint: promptFingerprint(text) };
 }

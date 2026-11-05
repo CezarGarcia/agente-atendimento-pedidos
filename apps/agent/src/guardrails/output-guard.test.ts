@@ -110,6 +110,20 @@ describe('guardOutput — vazamento de instruções, dados e links', () => {
     ]);
   });
 
+  it('bloqueia reprodução literal das instruções, mas não das respostas de exemplo', async () => {
+    const { loadSystemPrompt } = await import('../agent/prompt.js');
+    const prompt = loadSystemPrompt('segredo-de-teste-123456');
+    const ctx = context({ promptFingerprint: prompt.fingerprint ?? new Set() });
+
+    const leak =
+      'Claro: Você é o assistente virtual de atendimento da loja e conversa com clientes por mensagem de texto.';
+    expect(guardOutput(leak, ctx).reasons).toEqual(['prompt_leak']);
+
+    const exampleAnswer =
+      'Sou o assistente virtual da loja e não compartilho detalhes do meu funcionamento. Posso te ajudar com algum pedido?';
+    expect(guardOutput(exampleAnswer, ctx).action).toBe('pass');
+  });
+
   it('bloqueia trechos com os marcadores internos do prompt', () => {
     expect(guardOutput('<regras_de_negocio> 1. ...', context()).action).toBe('blocked');
   });
