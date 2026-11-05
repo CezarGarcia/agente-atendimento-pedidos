@@ -3,16 +3,16 @@
 O projeto é construído em fases incrementais. Cada fase termina com lint, checagem de tipos e
 testes passando, revisão do código e commit.
 
-| Fase | Entrega                                                                                        | Status       |
-| ---- | ---------------------------------------------------------------------------------------------- | ------------ |
-| 0    | Monorepo TypeScript, qualidade de código, logger estruturado, Postgres isolado por serviço, CI | Concluída    |
-| 1    | API principal de pedidos: regras, persistência, OpenAPI/Swagger, idempotência, auditoria       | Concluída    |
-| 2    | Integração resiliente com a Fake Store API                                                     | Concluída    |
-| 3    | Núcleo do agente: modelo de IA, ferramentas, confirmação determinística, guardrails            | Concluída    |
-| 4    | Canal de mensagens simulado e simulador web                                                    | Concluída    |
-| 5    | Testes ponta a ponta                                                                           | Em andamento |
-| 6    | Avaliações com o modelo real e testes adversariais                                             | Pendente     |
-| 7    | Documentação final, decisões e limitações                                                      | Pendente     |
+| Fase | Entrega                                                                                        | Status                                                 |
+| ---- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| 0    | Monorepo TypeScript, qualidade de código, logger estruturado, Postgres isolado por serviço, CI | Concluída                                              |
+| 1    | API principal de pedidos: regras, persistência, OpenAPI/Swagger, idempotência, auditoria       | Concluída                                              |
+| 2    | Integração resiliente com a Fake Store API                                                     | Concluída                                              |
+| 3    | Núcleo do agente: modelo de IA, ferramentas, confirmação determinística, guardrails            | Concluída                                              |
+| 4    | Canal de mensagens simulado e simulador web                                                    | Concluída                                              |
+| 5    | Testes ponta a ponta                                                                           | Concluída                                              |
+| 6    | Avaliações com o modelo real e testes adversariais                                             | Harness concluído; execução com o modelo real pendente |
+| 7    | Documentação final, decisões e limitações                                                      | Concluída                                              |
 
 ## Princípios que guiam as decisões
 
