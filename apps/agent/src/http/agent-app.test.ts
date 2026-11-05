@@ -55,7 +55,12 @@ function setup() {
         reset: () => Promise.resolve(),
         shipOrder: () => Promise.resolve({ shipped: true, status: 200 }),
       },
-      info: { model: 'claude-haiku-5-5', promptVersion: 'system-prompt@test', llmConfigured: true },
+      info: {
+        model: 'claude-haiku-5-5',
+        promptVersion: 'system-prompt@test',
+        llmConfigured: true,
+        llmSimulated: false,
+      },
     }),
   });
   return { app, model, chaos };

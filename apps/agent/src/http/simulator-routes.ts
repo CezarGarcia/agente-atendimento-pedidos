@@ -20,7 +20,12 @@ export interface SimulatorDependencies {
   readonly store: ConversationStore;
   readonly chaos: ChaosState;
   readonly ordersDemo: OrdersDemoClient;
-  readonly info: { model: string; promptVersion: string; llmConfigured: boolean };
+  readonly info: {
+    model: string;
+    promptVersion: string;
+    llmConfigured: boolean;
+    llmSimulated: boolean;
+  };
 }
 
 const SendSchema = z.object({

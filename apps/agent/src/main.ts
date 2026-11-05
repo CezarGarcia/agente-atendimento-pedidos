@@ -111,6 +111,8 @@ async function main(): Promise<void> {
               model: config.LLM_MODEL,
               promptVersion: prompt.version,
               llmConfigured: Boolean(config.ANTHROPIC_API_KEY),
+              // Endpoint trocado (stub dos testes E2E): o simulador avisa que as respostas são simuladas.
+              llmSimulated: config.ANTHROPIC_BASE_URL !== undefined,
             },
           }),
         }

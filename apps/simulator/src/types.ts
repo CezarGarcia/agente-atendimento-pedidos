@@ -20,6 +20,8 @@ export interface SimulatorState {
   model: string;
   promptVersion: string;
   llmConfigured: boolean;
+  /** Endpoint do modelo trocado por um stub (testes E2E): as respostas não vêm do modelo real. */
+  llmSimulated: boolean;
 }
 
 export interface QuickReply {

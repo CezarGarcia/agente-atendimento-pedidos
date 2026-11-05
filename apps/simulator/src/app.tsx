@@ -154,9 +154,12 @@ export function App() {
             Mock do canal de mensagens · o modelo interpreta e conversa; o código decide e executa
           </p>
         </div>
-        <Chip color={state.llmConfigured ? 'purple' : 'orange'} variant="caption">
+        <Chip
+          color={!state.llmConfigured ? 'orange' : state.llmSimulated ? 'soft' : 'purple'}
+          variant="caption"
+        >
           <RiCpuLine className="mr-1 size-3.5" aria-hidden />
-          {state.model}
+          {state.llmSimulated ? 'modelo simulado (stub)' : state.model}
         </Chip>
         <Chip color="soft" variant="caption">
           <RiFileCodeLine className="mr-1 size-3.5" aria-hidden />
