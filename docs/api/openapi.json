@@ -1,0 +1,868 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "API de Pedidos",
+    "version": "1.0.0",
+    "description": "API principal de pedidos. É a **fonte da verdade** do status dos pedidos e das regras de\ncancelamento: o agente de IA consulta e solicita, mas quem decide é esta API.\n\n### Regras aplicadas\n- Um pedido só pode ser cancelado enquanto está `PROCESSING` (em processamento).\n- Pedidos enviados, entregues, já cancelados ou aguardando pagamento **não** são cancelados\n  pelo fluxo automatizado (`409 ORDER_NOT_CANCELLABLE`, com o motivo em `reason`).\n- Toda consulta é escopada pelo cliente. Pedido de outro cliente responde `404`, igual a um\n  pedido inexistente, para não revelar que ele existe.\n- O cancelamento exige `Idempotency-Key`: repetir a mesma chave devolve o resultado original\n  sem executar a ação duas vezes.\n\n### Como distinguir os resultados\n| Resultado | HTTP | `code` |\n| --- | --- | --- |\n| Sucesso | 200 | — |\n| Pedido não encontrado | 404 | `ORDER_NOT_FOUND` |\n| Pedido não cancelável | 409 | `ORDER_NOT_CANCELLABLE` |\n| Erro técnico | 500 / 503 | `INTERNAL_ERROR` / `SERVICE_UNAVAILABLE` |\n\nPara testar por aqui, clique em **Authorize** e informe a chave de desenvolvimento\n`dev-swagger-key-change-me` (configurada no docker-compose)."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Servidor atual"
+    }
+  ],
+  "tags": [
+    {
+      "name": "Clientes",
+      "description": "Identificação do cliente a partir do canal de mensagens."
+    },
+    {
+      "name": "Pedidos",
+      "description": "Consulta e cancelamento de pedidos."
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Chave de serviço (autenticação serviço-a-serviço)."
+      }
+    },
+    "schemas": {
+      "CustomerLookupResult": {
+        "type": "object",
+        "properties": {
+          "customerId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Identificador interno do cliente (obtido em POST /v1/customers/lookup).",
+            "example": "11111111-1111-4111-8111-111111111111"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "Apenas o primeiro nome (minimização de dados).",
+            "example": "Ana"
+          }
+        },
+        "required": ["customerId", "firstName"]
+      },
+      "ValidationProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Problem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "errors": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["path", "message"]
+                }
+              }
+            },
+            "required": ["errors"]
+          }
+        ],
+        "description": "Erro no formato RFC 9457 (application/problem+json). Use `code` para decidir o tratamento."
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "example": "/problems/order-not-found"
+          },
+          "title": {
+            "type": "string",
+            "example": "Pedido não encontrado"
+          },
+          "status": {
+            "type": "integer",
+            "example": 404
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "VALIDATION_ERROR",
+              "IDEMPOTENCY_KEY_REQUIRED",
+              "UNAUTHENTICATED",
+              "CUSTOMER_NOT_FOUND",
+              "ORDER_NOT_FOUND",
+              "ROUTE_NOT_FOUND",
+              "ORDER_NOT_CANCELLABLE",
+              "PAYLOAD_TOO_LARGE",
+              "IDEMPOTENCY_KEY_MISMATCH",
+              "RATE_LIMITED",
+              "INTERNAL_ERROR",
+              "SERVICE_UNAVAILABLE"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "correlationId": {
+            "type": "string"
+          }
+        },
+        "required": ["type", "title", "status", "code"],
+        "description": "Erro no formato RFC 9457 (application/problem+json). Use `code` para decidir o tratamento."
+      },
+      "CustomerLookupRequest": {
+        "type": "object",
+        "properties": {
+          "phone": {
+            "type": "string",
+            "pattern": "^\\+[1-9]\\d{7,14}$",
+            "description": "Telefone verificado pelo canal de mensagens.",
+            "example": "+5551990000001"
+          }
+        },
+        "required": ["phone"],
+        "additionalProperties": false
+      },
+      "OrderList": {
+        "type": "object",
+        "properties": {
+          "orders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderSummary"
+            }
+          }
+        },
+        "required": ["orders"]
+      },
+      "OrderSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "description": "Número público do pedido (6 dígitos).",
+            "example": "100101"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "placedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "itemCount": {
+            "type": "integer"
+          }
+        },
+        "required": ["id", "status", "placedAt", "total", "itemCount"]
+      },
+      "OrderStatus": {
+        "type": "string",
+        "enum": ["AWAITING_PAYMENT", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"],
+        "description": "AWAITING_PAYMENT: aguardando pagamento · PROCESSING: em processamento (único status cancelável) · SHIPPED: enviado · DELIVERED: entregue · CANCELLED: cancelado"
+      },
+      "Money": {
+        "type": "object",
+        "properties": {
+          "amountCents": {
+            "type": "integer",
+            "example": 54990
+          },
+          "currency": {
+            "type": "string",
+            "enum": ["BRL"]
+          },
+          "formatted": {
+            "type": "string",
+            "description": "Valor formatado para exibição. Evita que consumidores (inclusive o modelo de IA) façam contas.",
+            "example": "R$ 549,90"
+          }
+        },
+        "required": ["amountCents", "currency", "formatted"]
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^\\d{6}$",
+            "description": "Número público do pedido (6 dígitos).",
+            "example": "100101"
+          },
+          "status": {
+            "$ref": "#/components/schemas/OrderStatus"
+          },
+          "placedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderItem"
+            }
+          },
+          "total": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "shipping": {
+            "type": "object",
+            "properties": {
+              "trackingCode": {
+                "type": ["string", "null"]
+              },
+              "estimatedDeliveryDate": {
+                "type": ["string", "null"],
+                "format": "date"
+              },
+              "shippedAt": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              },
+              "deliveredAt": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              }
+            },
+            "required": ["trackingCode", "estimatedDeliveryDate", "shippedAt", "deliveredAt"]
+          },
+          "cancellation": {
+            "type": "object",
+            "properties": {
+              "eligible": {
+                "type": "boolean",
+                "description": "Se o pedido pode ser cancelado agora. A regra é reavaliada no momento do cancelamento."
+              },
+              "blockedReason": {
+                "$ref": "#/components/schemas/CancellationBlockReason"
+              },
+              "cancelledAt": {
+                "type": ["string", "null"],
+                "format": "date-time"
+              }
+            },
+            "required": ["eligible", "blockedReason", "cancelledAt"],
+            "description": "Situação de cancelamento calculada pelo domínio."
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "placedAt",
+          "updatedAt",
+          "items",
+          "total",
+          "shipping",
+          "cancellation"
+        ]
+      },
+      "OrderItem": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "integer",
+            "description": "Identificador do produto no catálogo externo (Fake Store API).",
+            "example": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 1
+          },
+          "unitPrice": {
+            "$ref": "#/components/schemas/Money"
+          },
+          "subtotal": {
+            "$ref": "#/components/schemas/Money"
+          }
+        },
+        "required": ["productId", "quantity", "unitPrice", "subtotal"]
+      },
+      "CancellationBlockReason": {
+        "type": ["string", "null"],
+        "enum": [
+          "PAYMENT_PENDING",
+          "ALREADY_SHIPPED",
+          "ALREADY_DELIVERED",
+          "ALREADY_CANCELLED",
+          "UNKNOWN_STATUS",
+          null
+        ],
+        "description": "Motivo pelo qual o pedido não pode ser cancelado pelo fluxo automatizado."
+      },
+      "CancellationResult": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "$ref": "#/components/schemas/Order"
+          }
+        },
+        "required": ["order"]
+      },
+      "OrderNotCancellableProblem": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Problem"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "orderId": {
+                "type": "string",
+                "pattern": "^\\d{6}$",
+                "description": "Número público do pedido (6 dígitos).",
+                "example": "100101"
+              },
+              "currentStatus": {
+                "$ref": "#/components/schemas/OrderStatus"
+              },
+              "reason": {
+                "$ref": "#/components/schemas/CancellationBlockReason"
+              }
+            },
+            "required": ["orderId", "currentStatus", "reason"]
+          }
+        ],
+        "description": "Erro no formato RFC 9457 (application/problem+json). Use `code` para decidir o tratamento."
+      },
+      "CancellationRequest": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Motivo informado pelo cliente (opcional).",
+            "example": "Comprei o tamanho errado"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {
+    "/v1/customers/lookup": {
+      "post": {
+        "tags": ["Clientes"],
+        "summary": "Identificar cliente pelo telefone do canal",
+        "description": "Retorna apenas o identificador e o primeiro nome (minimização de dados).",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Identificador de correlação propagado entre serviços (gerado se ausente)."
+            },
+            "required": false,
+            "description": "Identificador de correlação propagado entre serviços (gerado se ausente).",
+            "name": "x-correlation-id",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CustomerLookupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Cliente identificado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CustomerLookupResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Entrada inválida (`VALIDATION_ERROR`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Chave de API ausente ou inválida (`UNAUTHENTICATED`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Telefone não cadastrado (`CUSTOMER_NOT_FOUND`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de requisições excedido (`RATE_LIMITED`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro técnico (`INTERNAL_ERROR`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependência indisponível (`SERVICE_UNAVAILABLE`). Pode ser repetida.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customers/{customerId}/orders": {
+      "get": {
+        "tags": ["Pedidos"],
+        "summary": "Listar pedidos recentes do cliente",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador interno do cliente (obtido em POST /v1/customers/lookup).",
+              "example": "11111111-1111-4111-8111-111111111111"
+            },
+            "required": true,
+            "description": "Identificador interno do cliente (obtido em POST /v1/customers/lookup).",
+            "name": "customerId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 20,
+              "default": 5,
+              "description": "Quantidade máxima de pedidos, do mais recente para o mais antigo.",
+              "example": 5
+            },
+            "required": false,
+            "description": "Quantidade máxima de pedidos, do mais recente para o mais antigo.",
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Identificador de correlação propagado entre serviços (gerado se ausente)."
+            },
+            "required": false,
+            "description": "Identificador de correlação propagado entre serviços (gerado se ausente).",
+            "name": "x-correlation-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pedidos do cliente, do mais recente ao mais antigo.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Entrada inválida (`VALIDATION_ERROR`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Chave de API ausente ou inválida (`UNAUTHENTICATED`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de requisições excedido (`RATE_LIMITED`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro técnico (`INTERNAL_ERROR`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependência indisponível (`SERVICE_UNAVAILABLE`). Pode ser repetida.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customers/{customerId}/orders/{orderId}": {
+      "get": {
+        "tags": ["Pedidos"],
+        "summary": "Consultar um pedido",
+        "description": "Inclui `cancellation.eligible`, calculado pelo domínio. A regra é reavaliada no momento do cancelamento, então este campo é informativo.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador interno do cliente (obtido em POST /v1/customers/lookup).",
+              "example": "11111111-1111-4111-8111-111111111111"
+            },
+            "required": true,
+            "description": "Identificador interno do cliente (obtido em POST /v1/customers/lookup).",
+            "name": "customerId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{6}$",
+              "description": "Número público do pedido (6 dígitos).",
+              "example": "100101"
+            },
+            "required": true,
+            "description": "Número público do pedido (6 dígitos).",
+            "name": "orderId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Identificador de correlação propagado entre serviços (gerado se ausente)."
+            },
+            "required": false,
+            "description": "Identificador de correlação propagado entre serviços (gerado se ausente).",
+            "name": "x-correlation-id",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pedido encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Order"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Entrada inválida (`VALIDATION_ERROR`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Chave de API ausente ou inválida (`UNAUTHENTICATED`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pedido inexistente ou de outro cliente (`ORDER_NOT_FOUND`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de requisições excedido (`RATE_LIMITED`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro técnico (`INTERNAL_ERROR`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependência indisponível (`SERVICE_UNAVAILABLE`). Pode ser repetida.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/customers/{customerId}/orders/{orderId}/cancellation": {
+      "post": {
+        "tags": ["Pedidos"],
+        "summary": "Solicitar o cancelamento de um pedido",
+        "description": "Cancela o pedido somente se ele estiver em processamento. A verificação e a mudança de status acontecem na mesma transação, com bloqueio do pedido: duas solicitações simultâneas nunca cancelam duas vezes.",
+        "security": [
+          {
+            "ApiKeyAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "description": "Identificador interno do cliente (obtido em POST /v1/customers/lookup).",
+              "example": "11111111-1111-4111-8111-111111111111"
+            },
+            "required": true,
+            "description": "Identificador interno do cliente (obtido em POST /v1/customers/lookup).",
+            "name": "customerId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{6}$",
+              "description": "Número público do pedido (6 dígitos).",
+              "example": "100101"
+            },
+            "required": true,
+            "description": "Número público do pedido (6 dígitos).",
+            "name": "orderId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Identificador de correlação propagado entre serviços (gerado se ausente)."
+            },
+            "required": false,
+            "description": "Identificador de correlação propagado entre serviços (gerado se ausente).",
+            "name": "x-correlation-id",
+            "in": "header"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$",
+              "description": "Chave única por tentativa lógica de cancelamento. Repetir a mesma chave com o mesmo corpo devolve a resposta original sem executar a ação de novo.",
+              "example": "conv-7f3a9c:cancel:100101"
+            },
+            "required": true,
+            "description": "Chave única por tentativa lógica de cancelamento. Repetir a mesma chave com o mesmo corpo devolve a resposta original sem executar a ação de novo.",
+            "name": "idempotency-key",
+            "in": "header"
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancellationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Pedido cancelado. O header `Idempotent-Replayed: true` indica resposta repetida.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancellationResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Entrada inválida (`VALIDATION_ERROR`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Chave de API ausente ou inválida (`UNAUTHENTICATED`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pedido inexistente ou de outro cliente (`ORDER_NOT_FOUND`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pedido não pode ser cancelado (`ORDER_NOT_CANCELLABLE`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderNotCancellableProblem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Idempotency-Key reutilizada com outro corpo (`IDEMPOTENCY_KEY_MISMATCH`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Limite de requisições excedido (`RATE_LIMITED`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Erro técnico (`INTERNAL_ERROR`).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Dependência indisponível (`SERVICE_UNAVAILABLE`). Pode ser repetida.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "webhooks": {}
+}
