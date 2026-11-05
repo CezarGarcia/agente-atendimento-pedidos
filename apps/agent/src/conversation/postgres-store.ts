@@ -1,9 +1,8 @@
 import { randomInt } from 'node:crypto';
 
-import type { Kysely, Selectable } from 'kysely';
+import { sql, type Kysely, type Selectable } from 'kysely';
 
 import type {
-  AgentReply,
   Conversation,
   HandoffTicket,
   IdentityStatus,
@@ -14,7 +13,7 @@ import type {
   TurnTrace,
 } from '../agent/types.js';
 import type { AgentDatabase } from './database.js';
-import type { ConversationStore } from './store.js';
+import type { CompletedTurn, ConversationStore, MessageClaim } from './store.js';
 
 type ConversationRow = Selectable<AgentDatabase['conversations']>;
 type PendingRow = Selectable<AgentDatabase['pending_actions']>;
@@ -26,6 +25,7 @@ const toConversation = (row: ConversationRow): Conversation => ({
   customerFirstName: row.customer_first_name,
   identityStatus: row.identity_status as IdentityStatus,
   status: row.status as Conversation['status'],
+  llmProfile: row.llm_profile,
   createdAt: row.created_at,
   lastActivityAt: new Date(row.last_activity_at),
 });
@@ -38,11 +38,14 @@ const toPending = (row: PendingRow): PendingAction => ({
   reason: row.reason,
   orderSummary: row.order_summary,
   status: row.status as PendingActionStatus,
+  awaitingTextReply: row.awaiting_text_reply,
   createdAt: new Date(row.created_at),
   expiresAt: new Date(row.expires_at),
 });
 
 const UNIQUE_VIOLATION = '23505';
+/** Reserva de mensagem sem resposta após este tempo é considerada abandonada (processo caiu). */
+const STALE_CLAIM = '2 minutes';
 
 export class PostgresConversationStore implements ConversationStore {
   constructor(private readonly db: Kysely<AgentDatabase>) {}
@@ -70,6 +73,7 @@ export class PostgresConversationStore implements ConversationStore {
         customer_id: input.customerId,
         customer_first_name: input.customerFirstName,
         identity_status: input.identityStatus,
+        llm_profile: input.llmProfile,
         last_activity_at: new Date(),
       })
       .returningAll()
@@ -97,14 +101,6 @@ export class PostgresConversationStore implements ConversationStore {
       .execute();
   }
 
-  async touchConversation(id: string, at: Date): Promise<void> {
-    await this.db
-      .updateTable('conversations')
-      .set({ last_activity_at: at })
-      .where('id', '=', id)
-      .execute();
-  }
-
   async closeConversation(id: string): Promise<void> {
     await this.updateConversation(id, { status: 'closed' });
   }
@@ -121,22 +117,6 @@ export class PostgresConversationStore implements ConversationStore {
       kind: row.kind as MessageKind,
       displayText: row.display_text,
     }));
-  }
-
-  async appendMessages(conversationId: string, messages: readonly StoredMessage[]): Promise<void> {
-    if (messages.length === 0) return;
-    // Uma única instrução: o turno entra inteiro (ou nada), preservando a alternância de papéis.
-    await this.db
-      .insertInto('conversation_messages')
-      .values(
-        messages.map((entry) => ({
-          conversation_id: conversationId,
-          kind: entry.kind,
-          payload: JSON.stringify(entry.message),
-          display_text: entry.displayText,
-        })),
-      )
-      .execute();
   }
 
   async findOpenPendingAction(conversationId: string): Promise<PendingAction | null> {
@@ -172,6 +152,7 @@ export class PostgresConversationStore implements ConversationStore {
         reason: action.reason,
         order_summary: action.orderSummary,
         status: action.status,
+        awaiting_text_reply: action.awaitingTextReply,
         created_at: action.createdAt,
         expires_at: action.expiresAt,
         updated_at: action.createdAt,
@@ -181,14 +162,36 @@ export class PostgresConversationStore implements ConversationStore {
 
   async updatePendingAction(
     id: string,
-    status: PendingActionStatus,
-    expiresAt?: Date,
+    patch: { status?: PendingActionStatus; expiresAt?: Date; awaitingTextReply?: boolean },
   ): Promise<void> {
     await this.db
       .updateTable('pending_actions')
-      .set({ status, updated_at: new Date(), ...(expiresAt ? { expires_at: expiresAt } : {}) })
+      .set({
+        updated_at: new Date(),
+        ...(patch.status === undefined ? {} : { status: patch.status }),
+        ...(patch.expiresAt === undefined ? {} : { expires_at: patch.expiresAt }),
+        ...(patch.awaitingTextReply === undefined
+          ? {}
+          : { awaiting_text_reply: patch.awaitingTextReply }),
+      })
       .where('id', '=', id)
       .execute();
+  }
+
+  async transitionPendingAction(
+    id: string,
+    from: readonly PendingActionStatus[],
+    to: PendingActionStatus,
+  ): Promise<boolean> {
+    // Compare-and-set em uma única instrução: só uma instância consegue a transição.
+    const row = await this.db
+      .updateTable('pending_actions')
+      .set({ status: to, updated_at: new Date() })
+      .where('id', '=', id)
+      .where('status', 'in', [...from])
+      .returning('id')
+      .executeTakeFirst();
+    return row !== undefined;
   }
 
   async createHandoff(
@@ -240,36 +243,64 @@ export class PostgresConversationStore implements ConversationStore {
       : null;
   }
 
-  async findProcessedMessage(messageId: string): Promise<AgentReply | null> {
-    const row = await this.db
+  async claimMessage(messageKey: string): Promise<MessageClaim> {
+    // Insere a reserva; se já existir sem resposta há muito tempo (processo caiu), retoma.
+    const claimed = await this.db
+      .insertInto('processed_messages')
+      .values({ message_id: messageKey, conversation_id: null, reply: null })
+      .onConflict((oc) =>
+        oc
+          .column('message_id')
+          .doUpdateSet({ claimed_at: sql<Date>`now()` })
+          .where('processed_messages.reply', 'is', null)
+          .where('processed_messages.claimed_at', '<', sql<Date>`now() - ${STALE_CLAIM}::interval`),
+      )
+      .returning('message_id')
+      .executeTakeFirst();
+    if (claimed) return { status: 'claimed' };
+
+    const existing = await this.db
       .selectFrom('processed_messages')
       .select('reply')
-      .where('message_id', '=', messageId)
+      .where('message_id', '=', messageKey)
       .executeTakeFirst();
-    return row?.reply ?? null;
+    return { status: 'duplicate', reply: existing?.reply ?? null };
   }
 
-  async saveProcessedMessage(messageId: string, reply: AgentReply): Promise<void> {
-    await this.db
-      .insertInto('processed_messages')
-      .values({
-        message_id: messageId,
-        conversation_id: reply.conversationId,
-        reply: JSON.stringify(reply),
-      })
-      .onConflict((oc) => oc.column('message_id').doNothing())
-      .execute();
-  }
-
-  async saveTrace(trace: TurnTrace): Promise<void> {
-    await this.db
-      .insertInto('turn_traces')
-      .values({
-        conversation_id: trace.conversationId,
-        correlation_id: trace.correlationId,
-        trace: JSON.stringify(trace),
-      })
-      .execute();
+  async completeTurn(turn: CompletedTurn): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      if (turn.messages.length > 0) {
+        await trx
+          .insertInto('conversation_messages')
+          .values(
+            turn.messages.map((entry) => ({
+              conversation_id: turn.conversationId,
+              kind: entry.kind,
+              payload: JSON.stringify(entry.message),
+              display_text: entry.displayText,
+            })),
+          )
+          .execute();
+      }
+      await trx
+        .updateTable('conversations')
+        .set({ last_activity_at: turn.at })
+        .where('id', '=', turn.conversationId)
+        .execute();
+      await trx
+        .insertInto('turn_traces')
+        .values({
+          conversation_id: turn.conversationId,
+          correlation_id: turn.trace.correlationId,
+          trace: JSON.stringify(turn.trace),
+        })
+        .execute();
+      await trx
+        .updateTable('processed_messages')
+        .set({ conversation_id: turn.conversationId, reply: JSON.stringify(turn.reply) })
+        .where('message_id', '=', turn.messageKey)
+        .execute();
+    });
   }
 
   async listTraces(conversationId: string, limit: number): Promise<TurnTrace[]> {

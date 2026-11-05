@@ -44,6 +44,12 @@ export interface Conversation {
   readonly customerFirstName: string | null;
   readonly identityStatus: IdentityStatus;
   readonly status: 'active' | 'handed_off' | 'closed';
+  /**
+   * Versão do prompt + modelo usados na conversa. Blocos de raciocínio guardados no histórico só
+   * valem com o mesmo prefixo (instruções e ferramentas idênticas); se o perfil mudar (deploy de
+   * um prompt novo), a conversa é encerrada e outra começa.
+   */
+  readonly llmProfile: string;
   readonly createdAt: Date;
   readonly lastActivityAt: Date;
 }
@@ -62,6 +68,8 @@ export interface StoredMessage {
 
 export type PendingActionStatus =
   | 'awaiting_confirmation'
+  /** Reservada por uma instância para execução (evita execução dupla e confirmação × recusa). */
+  | 'executing'
   /** O cancelamento foi tentado e o resultado é desconhecido (erro técnico). Pode ser repetido. */
   | 'outcome_unknown'
   | 'completed'
@@ -80,6 +88,12 @@ export interface PendingAction {
   /** Resumo do pedido mostrado na confirmação (ex.: "Mochila e mais 1 item, R$ 829,80"). */
   readonly orderSummary: string;
   readonly status: PendingActionStatus;
+  /**
+   * A última mensagem enviada ao cliente é a pergunta de confirmação desta ação. Só nesse caso
+   * uma resposta em texto ("sim") vale como confirmação; depois de qualquer outra resposta do
+   * agente, apenas o botão (que carrega o id da ação) é aceito.
+   */
+  readonly awaitingTextReply: boolean;
   readonly createdAt: Date;
   readonly expiresAt: Date;
 }

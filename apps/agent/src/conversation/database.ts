@@ -12,6 +12,7 @@ import type { Logger } from '@agente/shared';
 
 import type { AgentReply, LlmMessage, TurnTrace } from '../agent/types.js';
 import * as initialSchema from './migrations/0001-initial-schema.js';
+import * as reviewHardening from './migrations/0002-review-hardening.js';
 
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
@@ -22,6 +23,7 @@ export interface AgentDatabase {
     customer_id: string | null;
     customer_first_name: string | null;
     identity_status: string;
+    llm_profile: string;
     status: Generated<string>;
     created_at: Generated<Date>;
     last_activity_at: Timestamp;
@@ -42,6 +44,7 @@ export interface AgentDatabase {
     reason: string | null;
     order_summary: string;
     status: string;
+    awaiting_text_reply: boolean;
     created_at: Timestamp;
     expires_at: Timestamp;
     updated_at: Timestamp;
@@ -55,9 +58,10 @@ export interface AgentDatabase {
   };
   processed_messages: {
     message_id: string;
-    conversation_id: string;
-    reply: JSONColumnType<AgentReply>;
+    conversation_id: string | null;
+    reply: JSONColumnType<AgentReply | null, string | null, string | null>;
     created_at: Generated<Date>;
+    claimed_at: Generated<Date>;
   };
   turn_traces: {
     id: Generated<string>;
@@ -89,7 +93,10 @@ export function createAgentDatabase(
   return new Kysely<AgentDatabase>({ dialect: new PostgresDialect({ pool }) });
 }
 
-const migrations: Record<string, Migration> = { '0001-initial-schema': initialSchema };
+const migrations: Record<string, Migration> = {
+  '0001-initial-schema': initialSchema,
+  '0002-review-hardening': reviewHardening,
+};
 
 export async function migrateAgentDatabase(
   db: Kysely<AgentDatabase>,

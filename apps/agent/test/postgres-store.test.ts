@@ -10,7 +10,7 @@ import { createLogger } from '@agente/shared';
 import { AgentService } from '../src/agent/agent-service.js';
 import { CONFIRM_PAYLOAD_PREFIX } from '../src/agent/confirmation.js';
 import { ToolExecutor } from '../src/agent/tools.js';
-import type { LlmMessage } from '../src/agent/types.js';
+import type { LlmMessage, TurnTrace } from '../src/agent/types.js';
 import {
   createAgentDatabase,
   migrateAgentDatabase,
@@ -103,14 +103,31 @@ describe('PostgresConversationStore com o agente real', () => {
     ]);
   });
 
-  it('guarda o histórico exatamente como enviado ao modelo (inclusive blocos de raciocínio)', async () => {
-    const store = new PostgresConversationStore(db);
-    const conversation = await store.createConversation({
+  const newConversation = (store: PostgresConversationStore) =>
+    store.createConversation({
       phoneRef: `tel_${randomUUID()}`,
       customerId: 'cust-ana',
       customerFirstName: 'Ana',
       identityStatus: 'verified',
+      llmProfile: 'system-prompt@test|claude-haiku-5-5',
     });
+
+  const trace = (conversationId: string): TurnTrace => ({
+    correlationId: randomUUID(),
+    conversationId,
+    startedAt: new Date().toISOString(),
+    durationMs: 1,
+    promptVersion: 'system-prompt@test',
+    path: 'llm',
+    inputGuard: { piiDetected: [], injectionSignals: [], truncated: false },
+    llmCalls: [],
+    toolCalls: [],
+    responseSource: 'llm',
+  });
+
+  it('guarda o histórico exatamente como enviado ao modelo (inclusive blocos de raciocínio)', async () => {
+    const store = new PostgresConversationStore(db);
+    const conversation = await newConversation(store);
     const assistant: LlmMessage = {
       role: 'assistant',
       content: [
@@ -118,48 +135,111 @@ describe('PostgresConversationStore com o agente real', () => {
         { type: 'text', text: 'Olá! 😊' },
       ],
     };
-    await store.appendMessages(conversation.id, [
-      { message: { role: 'user', content: 'oi' }, kind: 'customer', displayText: 'oi' },
-      { message: assistant, kind: 'agent', displayText: 'Olá! 😊' },
-    ]);
+    const key = `tel:${randomUUID()}`;
+    await store.claimMessage(key);
+    await store.completeTurn({
+      messageKey: key,
+      conversationId: conversation.id,
+      messages: [
+        { message: { role: 'user', content: 'oi' }, kind: 'customer', displayText: 'oi' },
+        { message: assistant, kind: 'agent', displayText: 'Olá! 😊' },
+      ],
+      at: new Date(),
+      trace: trace(conversation.id),
+      reply: {
+        conversationId: conversation.id,
+        correlationId: 'c',
+        messages: [{ text: 'Olá! 😊' }],
+      },
+    });
     const loaded = await store.loadMessages(conversation.id);
     expect(loaded.map((m) => m.message)).toEqual([{ role: 'user', content: 'oi' }, assistant]);
   });
 
   it('encontra a conversa ativa pelo HMAC do telefone e respeita a inatividade', async () => {
     const store = new PostgresConversationStore(db);
-    const phoneRef = `tel_${randomUUID()}`;
-    const conversation = await store.createConversation({
-      phoneRef,
-      customerId: null,
-      customerFirstName: null,
-      identityStatus: 'unknown_customer',
-    });
-    await store.touchConversation(conversation.id, new Date(Date.now() - 3_600_000));
+    const conversation = await newConversation(store);
+    await db
+      .updateTable('conversations')
+      .set({ last_activity_at: new Date(Date.now() - 3_600_000) })
+      .where('id', '=', conversation.id)
+      .execute();
 
+    const phoneRef = conversation.phoneRef;
     expect(
       await store.findActiveConversation(phoneRef, new Date(Date.now() - 7_200_000)),
     ).not.toBeNull();
     expect(await store.findActiveConversation(phoneRef, new Date(Date.now() - 60_000))).toBeNull();
   });
 
-  it('deduplica mensagens e mantém um único protocolo por conversa', async () => {
+  it('reserva cada mensagem uma única vez e devolve a resposta gravada nas repetições', async () => {
     const store = new PostgresConversationStore(db);
-    const conversation = await store.createConversation({
-      phoneRef: `tel_${randomUUID()}`,
-      customerId: 'cust-ana',
-      customerFirstName: 'Ana',
-      identityStatus: 'verified',
+    const conversation = await newConversation(store);
+    const key = `tel:${randomUUID()}`;
+    const claims = await Promise.all([store.claimMessage(key), store.claimMessage(key)]);
+    expect(claims.filter((c) => c.status === 'claimed')).toHaveLength(1);
+    expect(claims.find((c) => c.status === 'duplicate')).toEqual({
+      status: 'duplicate',
+      reply: null,
     });
+
     const reply = {
       conversationId: conversation.id,
       correlationId: 'c-1',
       messages: [{ text: 'oi' }],
     };
-    await store.saveProcessedMessage('wamid.X', reply);
-    await store.saveProcessedMessage('wamid.X', reply);
-    expect(await store.findProcessedMessage('wamid.X')).toEqual(reply);
+    await store.completeTurn({
+      messageKey: key,
+      conversationId: conversation.id,
+      messages: [],
+      at: new Date(),
+      trace: trace(conversation.id),
+      reply,
+    });
+    expect(await store.claimMessage(key)).toEqual({ status: 'duplicate', reply });
+  });
 
+  it('retoma a reserva abandonada (processo caiu antes de responder)', async () => {
+    const store = new PostgresConversationStore(db);
+    const key = `tel:${randomUUID()}`;
+    await store.claimMessage(key);
+    await db
+      .updateTable('processed_messages')
+      .set({ claimed_at: new Date(Date.now() - 5 * 60_000) })
+      .where('message_id', '=', key)
+      .execute();
+    expect(await store.claimMessage(key)).toEqual({ status: 'claimed' });
+  });
+
+  it('transição de ação pendente é atômica: confirmação e recusa simultâneas, só uma vence', async () => {
+    const store = new PostgresConversationStore(db);
+    const conversation = await newConversation(store);
+    const id = randomUUID();
+    await store.savePendingAction({
+      id,
+      conversationId: conversation.id,
+      type: 'cancel_order',
+      orderId: '100101',
+      reason: null,
+      orderSummary: '1 item, total R$ 1,00',
+      status: 'awaiting_confirmation',
+      awaitingTextReply: true,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 600_000),
+    });
+    const open = ['awaiting_confirmation', 'outcome_unknown'] as const;
+    const results = await Promise.all([
+      store.transitionPendingAction(id, open, 'executing'),
+      store.transitionPendingAction(id, open, 'declined'),
+      store.transitionPendingAction(id, open, 'executing'),
+    ]);
+    expect(results.filter(Boolean)).toHaveLength(1);
+    expect(await store.findOpenPendingAction(conversation.id)).toBeNull();
+  });
+
+  it('mantém um único protocolo de atendimento por conversa', async () => {
+    const store = new PostgresConversationStore(db);
+    const conversation = await newConversation(store);
     const first = await store.createHandoff({
       conversationId: conversation.id,
       reason: 'outro',
