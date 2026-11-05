@@ -80,8 +80,8 @@ sequenceDiagram
 
 Detalhes de implementação relevantes:
 
-- **Laço explícito, sem framework de agentes.** São cerca de 150 linhas em
-  [`agent-service.ts`](../apps/agent/src/agent/agent-service.ts). O laço tem pontos de controle
+- **Laço explícito, sem framework de agentes.** O laço do modelo (`runModel`, cerca de 150 linhas
+  em [`agent-service.ts`](../apps/agent/src/agent/agent-service.ts)) tem pontos de controle
   que um runner genérico não expõe: encerra o turno com a pergunta de confirmação, aplica o
   guardrail antes de persistir, limita o número de iterações (5) e grava o turno numa transação.
 - **Histórico só cresce (append-only).** O Haiku 5.5 devolve blocos de raciocínio assinados, que
@@ -194,4 +194,25 @@ Um juiz opcional (outro modelo, com saída estruturada) avalia tom e clareza. O 
 ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --transcripts
 ```
 
-Os resultados da última execução estão em [`08-exemplos-de-conversa.md`](08-exemplos-de-conversa.md).
+O relatório, os resultados e as transcrições vão para `docs/evals/`, e o resumo para
+[`08-exemplos-de-conversa.md`](08-exemplos-de-conversa.md).
+
+## 7. Contrato do canal de mensagens (webhook)
+
+A plataforma de mensagens é simulada, mas o contrato segue o formato das plataformas reais: um
+webhook assinado por mensagem recebida.
+
+`POST /channels/mock-whatsapp/webhook`
+
+| Parte                    | Formato                                                                                                                                                                            |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Header `x-signature-256` | `sha256=` + HMAC-SHA256 do corpo **bruto** com `CHANNEL_WEBHOOK_SECRET`, comparado em tempo constante                                                                              |
+| Corpo                    | `messageId` (1–128), `from` (telefone E.164, verificado pela plataforma), `timestamp` (opcional), e `text` (até 4.096) e/ou `button` (`payload`, `title`); campos extras recusados |
+| 200                      | `{ conversationId, correlationId, messages: [{ text, quickReplies? }] }`: as mensagens a enviar ao cliente; `quickReplies` são os botões (`payload`, `title`)                      |
+| 400 / 401                | Problem Details (`VALIDATION_ERROR` / `INVALID_SIGNATURE`); o agente não é acionado                                                                                                |
+
+O mesmo `messageId` vindo do mesmo telefone recebe a mesma resposta sem novo processamento
+(plataformas reentregam webhooks). O botão de confirmação leva no `payload` o id da ação pendente;
+é assim que a confirmação é inequívoca. Hoje a resposta é síncrona; com uma plataforma real, o
+webhook responderia 200 de imediato e enviaria as mensagens pela API de envio (registrado em
+[limitações](09-decisoes-e-limitacoes.md)).

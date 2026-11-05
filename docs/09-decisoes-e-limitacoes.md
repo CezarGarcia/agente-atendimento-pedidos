@@ -18,8 +18,8 @@ são fixas. É uma troca deliberada, porque essas três precisam ser exatas.
 
 **Contexto.** Duas operações, um domínio estreito. A recomendação da Anthropic para esses casos
 ("Building effective agents") é começar pelo mais simples que resolva.
-**Decisão.** Um único modelo com quatro ferramentas e um laço explícito de ~150 linhas, sem
-LangChain/LangGraph, sem multiagente e sem RAG.
+**Decisão.** Um único modelo com quatro ferramentas e um laço explícito (`runModel`, cerca de 150
+linhas), sem LangChain/LangGraph, sem multiagente e sem RAG.
 **Por quê.** Os pontos de controle que importam (encerrar o turno na confirmação, guardrail antes
 de persistir, limite de iterações, transação do turno) ficam visíveis e testáveis. O SDK tem um
 _tool runner_, mas o controle que este caso exige é mais fino que os ganchos dele.
@@ -89,25 +89,26 @@ real e stubs HTTP no lugar do modelo e da Fake Store; evals com o modelo real.
 determinístico e roda no CI. "O modelo conduz bem a conversa?" é estatístico e precisa de
 repetição (`pass^k`).
 
-### D10. Revisões independentes antes de fechar cada fase crítica
+### D10. Revisão adversarial das partes críticas
 
-A API e o núcleo do agente passaram por revisões adversariais. Os problemas encontrados viraram
-commits `fix(...)` com testes que reproduzem cada um. Por exemplo: um "sim" respondendo outra
-pergunta confirmava um cancelamento antigo, o canary aleatório quebraria o histórico após um
-reinício, e conexões derrubadas pelo banco encerravam o processo. O histórico do Git mostra esse
-ciclo.
+A API, o núcleo do agente e o guardrail de saída foram revisados procurando, de propósito, um jeito
+de quebrar as regras. Cada problema encontrado virou um commit `fix(...)` com um teste que o
+reproduz. Exemplos: um "sim" respondendo outra pergunta confirmava um cancelamento antigo (AG-14);
+o canary aleatório quebraria o histórico após um reinício (AG-33); conexões derrubadas pelo banco
+encerravam o processo (API-28); depois de listar os pedidos, "seu pedido foi cancelado" sem número
+passava pelo guardrail (AG-17).
 
 ## Limitações
 
-| Limitação                                                                                                            | Impacto                                                                                                                                        | Caminho                                                                      |
-| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| A suíte de evals ainda não foi executada contra o modelo real (o ambiente de desenvolvimento não tinha chave de API) | Os números de acerto do modelo real não estão registrados                                                                                      | `npm run eval` com `ANTHROPIC_API_KEY` (veja `08-exemplos-de-conversa.md`)   |
-| Fila por conversa em memória                                                                                         | Com várias instâncias, mensagens simultâneas da mesma conversa podem ser processadas em paralelo. A execução do cancelamento continua atômica. | `pg_advisory_lock` por conversa ou fila particionada                         |
-| Webhook síncrono                                                                                                     | Plataformas reais esperam 200 rápido e resposta por API de envio                                                                               | Responder 200 de imediato e processar numa fila (com o mesmo `AgentService`) |
-| Detecção de afirmações e de manipulação por regras                                                                   | Paráfrases criativas podem escapar; frases genéricas podem ser bloqueadas                                                                      | Evals para calibrar; classificador dedicado como sinal adicional             |
-| Identidade só pelo telefone                                                                                          | Telefone compartilhado vê os pedidos daquele cadastro                                                                                          | Segundo fator para ações sensíveis (dúvida 10)                               |
-| Sem política de retenção de conversas e traces                                                                       | Dados ficam até serem apagados manualmente                                                                                                     | Expurgo agendado conforme a política definida (dúvida 12)                    |
-| Atendimento humano simulado                                                                                          | O protocolo não chega a uma fila real                                                                                                          | Integração com a ferramenta de atendimento (Zendesk, Intercom…)              |
-| Catálogo em inglês                                                                                                   | Nomes de produtos aparecem em inglês                                                                                                           | Catálogo localizado (fora do alcance da Fake Store)                          |
-| Migrations rodam na inicialização                                                                                    | Adequado a uma instância; arriscado com várias                                                                                                 | Job de migração separado no deploy                                           |
-| Métricas e tracing distribuído                                                                                       | Há logs estruturados com correlation id e traces por turno, mas não há OpenTelemetry nem dashboards                                            | Exportar spans OTel (o SDK da Anthropic suporta) e métricas por evento       |
+| Limitação                                                     | Impacto                                                                                                                                        | Caminho                                                                      |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| A suíte de evals ainda não foi executada contra o modelo real | Os números de acerto do modelo real não estão registrados                                                                                      | `npm run eval` com `ANTHROPIC_API_KEY` (veja `08-exemplos-de-conversa.md`)   |
+| Fila por conversa em memória                                  | Com várias instâncias, mensagens simultâneas da mesma conversa podem ser processadas em paralelo. A execução do cancelamento continua atômica. | `pg_advisory_lock` por conversa ou fila particionada                         |
+| Webhook síncrono                                              | Plataformas reais esperam 200 rápido e resposta por API de envio                                                                               | Responder 200 de imediato e processar numa fila (com o mesmo `AgentService`) |
+| Detecção de afirmações e de manipulação por regras            | Paráfrases criativas podem escapar; frases genéricas podem ser bloqueadas                                                                      | Evals para calibrar; classificador dedicado como sinal adicional             |
+| Identidade só pelo telefone                                   | Telefone compartilhado vê os pedidos daquele cadastro                                                                                          | Segundo fator para ações sensíveis (dúvida 10)                               |
+| Sem política de retenção de conversas e traces                | Dados ficam até serem apagados manualmente                                                                                                     | Expurgo agendado conforme a política definida (dúvida 12)                    |
+| Atendimento humano simulado                                   | O protocolo não chega a uma fila real                                                                                                          | Integração com a ferramenta de atendimento (Zendesk, Intercom…)              |
+| Catálogo em inglês                                            | Nomes de produtos aparecem em inglês                                                                                                           | Catálogo localizado (fora do alcance da Fake Store)                          |
+| Migrations rodam na inicialização                             | Adequado a uma instância; arriscado com várias                                                                                                 | Job de migração separado no deploy                                           |
+| Métricas e tracing distribuído                                | Há logs estruturados com correlation id e traces por turno, mas não há OpenTelemetry nem dashboards                                            | Exportar spans OTel (o SDK da Anthropic suporta) e métricas por evento       |

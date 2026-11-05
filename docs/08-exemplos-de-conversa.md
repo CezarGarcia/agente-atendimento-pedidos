@@ -93,9 +93,9 @@ ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --trans
 O comando grava em `docs/evals/` o relatório (`relatorio-*.md`), os resultados (`resultados-*.json`)
 e as transcrições (`conversas-*.md`).
 
-> **Pendente:** executar com uma chave de API válida. O ambiente onde o projeto foi desenvolvido
-> não tinha acesso à API da Anthropic. O harness foi validado de ponta a ponta contra o stub
-> determinístico (31 cenários executados, verificações e relatório gerados).
+> **Pendente:** a execução com o modelo real requer `ANTHROPIC_API_KEY` e ainda não foi feita. O
+> harness foi validado de ponta a ponta contra o stub determinístico (31 cenários executados,
+> verificações e relatório gerados).
 
 Para experimentar à mão, use o simulador (<http://localhost:3002>) com `ANTHROPIC_API_KEY` no
 `.env`. As sugestões de mensagem de cada cliente simulado cobrem os casos principais, inclusive

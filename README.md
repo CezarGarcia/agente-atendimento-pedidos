@@ -70,17 +70,27 @@ curl -s localhost:3002/channels/mock-whatsapp/webhook -H 'content-type: applicat
 
 ```bash
 npm install
-npm run check                 # formatação, lint, tipos e testes (unitários + integração)
-npm run e2e:up && npm run test:e2e && npm run e2e:down   # ponta a ponta
-ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --transcripts   # modelo real
+npm run check   # formatação, lint, tipos e testes unitários + integração (requer Docker)
+```
+
+```bash
+npx -w @agente/e2e playwright install chromium   # uma vez: navegador do teste do simulador
+npm run e2e:up && npm run test:e2e && npm run e2e:down
+```
+
+```bash
+ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --transcripts
 ```
 
 | Camada                        | Quantidade  | O que prova                                                                                                                        |
 | ----------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Unitários e integração        | 283         | Regras, API com PostgreSQL real (inclusive concorrência), guardrails, confirmação, resiliência                                     |
-| Agente com modelo roteirizado | incluídos   | O harness impõe as regras **mesmo com o modelo errando de propósito**; cada requisição é validada contra as regras da Messages API |
+| Unitários e integração        | 303         | Regras, API com PostgreSQL real (inclusive concorrência), guardrails, confirmação, resiliência                                     |
+| Agente com modelo roteirizado | 46 dos 303  | O harness impõe as regras **mesmo com o modelo errando de propósito**; cada requisição é validada contra as regras da Messages API |
 | Ponta a ponta                 | 21          | Stack completa por webhook assinado e navegador, conferindo o estado na API principal                                              |
 | Avaliação com o modelo real   | 31 cenários | Comportamento do modelo dentro do harness, com repetição (`pass^k`) e red team                                                     |
+
+Cada caso documentado em [`docs/06-casos-de-teste.md`](docs/06-casos-de-teste.md) tem o ID no nome
+do teste que o verifica: `npx vitest run -t "AG-17"` roda só aquele caso.
 
 O CI (GitHub Actions) roda qualidade e testes, build das imagens e o E2E com a stack completa.
 
@@ -158,3 +168,17 @@ desenvolvimento: com `NODE_ENV=production`, os serviços **recusam** segredos `c
 | `CONFIRMATION_TTL_MINUTES`  | `10`                       | Validade da confirmação de cancelamento                    |
 | `CONVERSATION_IDLE_MINUTES` | `30`                       | Inatividade que encerra a conversa                         |
 | `DEMO_MODE`                 | `true` no compose          | Simulador, falhas simuladas e rotas de demonstração        |
+
+## Glossário
+
+| Termo              | Significado neste projeto                                                                                                  |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Harness            | O código em volta do modelo: laço de ferramentas, estado da conversa, confirmação e guardrails. É ele que impõe as regras. |
+| Guardrail          | Verificação determinística na entrada ou na saída do modelo (dados pessoais, manipulação, afirmações não confirmadas).     |
+| Canary             | Marcador secreto no prompt. Se aparecer numa resposta, as instruções vazaram.                                              |
+| BOLA               | _Broken Object Level Authorization_ (OWASP API1): acessar o objeto de outra pessoa trocando o id na requisição.            |
+| Idempotency-Key    | Chave enviada no cancelamento. Repetir a requisição com a mesma chave não cancela duas vezes.                              |
+| Modelo roteirizado | Substituto do modelo nos testes, com respostas definidas pelo teste, inclusive erradas de propósito.                       |
+| `pass^k`           | Um cenário de avaliação só conta como aprovado se passar em todas as k execuções.                                          |
+| Stale-on-error     | Com o catálogo fora do ar, servir o dado antigo do cache em vez de nenhum.                                                 |
+| Problem Details    | Formato padrão de erro HTTP (RFC 9457) usado pelas APIs.                                                                   |
