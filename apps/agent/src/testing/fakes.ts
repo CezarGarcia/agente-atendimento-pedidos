@@ -37,11 +37,26 @@ type Step = (request: LlmRequest) => LlmResponse | Promise<LlmResponse>;
 
 let toolUseCounter = 0;
 
+let thinkingCounter = 0;
+
+/**
+ * Como o Claude Haiku 5.5 (raciocínio adaptativo ligado por padrão), toda resposta começa com um
+ * bloco de raciocínio com assinatura opaca e texto omitido. Ele precisa voltar intacto no histórico.
+ */
+const thinkingBlock = (): Anthropic.ContentBlock => {
+  thinkingCounter += 1;
+  return {
+    type: 'thinking',
+    thinking: '',
+    signature: `sig-${String(thinkingCounter)}`,
+  };
+};
+
 const response = (
   content: Anthropic.ContentBlock[],
   stopReason: Anthropic.StopReason,
 ): LlmResponse => ({
-  content,
+  content: [thinkingBlock(), ...content],
   stopReason,
   model: 'claude-haiku-5-5',
   latencyMs: 5,
@@ -79,10 +94,74 @@ export const llm = {
     },
 };
 
+/**
+ * Confere cada requisição contra as regras estruturais da Messages API (o que a API real
+ * recusaria com 400): alternância de papéis, posição das mensagens de sistema, tool_use sem
+ * tool_result, conteúdo vazio. Também confere, por conversa, que o histórico só cresce e que
+ * instruções e ferramentas não mudam (senão os blocos de raciocínio deixam de valer).
+ */
+export function validateRequest(request: LlmRequest, previous: LlmRequest | undefined): string[] {
+  const problems: string[] = [];
+  const messages = request.messages;
+  if (messages[0]?.role !== 'user') problems.push('a primeira mensagem não é do usuário');
+  messages.forEach((message, index) => {
+    const content = message.content;
+    if (typeof content === 'string' ? content.trim() === '' : content.length === 0) {
+      problems.push(`conteúdo vazio na posição ${String(index)}`);
+    }
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block.type === 'text' && block.text.trim() === '') {
+          problems.push(`bloco de texto vazio na posição ${String(index)}`);
+        }
+      }
+    }
+    if (message.role === 'system') {
+      if (index === 0) problems.push('mensagem de sistema na posição 0');
+      if (messages[index - 1]?.role !== 'user') {
+        problems.push(`mensagem de sistema na posição ${String(index)} não segue uma do usuário`);
+      }
+      const next = messages[index + 1];
+      if (next && next.role !== 'assistant') {
+        problems.push(`mensagem de sistema na posição ${String(index)} seguida de ${next.role}`);
+      }
+    }
+    if (message.role === 'assistant' && Array.isArray(content)) {
+      const ids = content.flatMap((block) => (block.type === 'tool_use' ? [block.id] : []));
+      const next = messages[index + 1];
+      const answered = Array.isArray(next?.content)
+        ? next.content.flatMap((block) => (block.type === 'tool_result' ? [block.tool_use_id] : []))
+        : [];
+      for (const id of ids) {
+        if (!answered.includes(id)) problems.push(`tool_use ${id} sem tool_result`);
+      }
+    }
+  });
+  const roles = messages.filter((m) => m.role !== 'system').map((m) => m.role);
+  roles.forEach((role, index) => {
+    if (index > 0 && role === roles[index - 1]) problems.push(`dois "${role}" seguidos`);
+  });
+  if (roles.at(-1) !== 'user') problems.push('a última mensagem não é do usuário (prefill)');
+
+  const sameConversation = previous?.conversationRef === request.conversationRef;
+  if (previous && sameConversation) {
+    if (previous.system !== request.system) problems.push('system mudou dentro da conversa');
+    if (JSON.stringify(previous.tools) !== JSON.stringify(request.tools)) {
+      problems.push('ferramentas mudaram dentro da conversa');
+    }
+    const prefix = JSON.stringify(request.messages.slice(0, previous.messages.length));
+    if (prefix !== JSON.stringify(previous.messages)) {
+      problems.push('histórico anterior foi alterado (deveria só crescer)');
+    }
+  }
+  return problems;
+}
+
 export class ScriptedLlm implements LlmClient {
   readonly model = 'claude-haiku-5-5';
   readonly requests: LlmRequest[] = [];
   private readonly steps: Step[] = [];
+  private readonly lastByConversation = new Map<string, LlmRequest>();
 
   script(...steps: Step[]): this {
     this.steps.push(...steps);
@@ -90,6 +169,11 @@ export class ScriptedLlm implements LlmClient {
   }
 
   async complete(request: LlmRequest): Promise<LlmResponse> {
+    const problems = validateRequest(request, this.lastByConversation.get(request.conversationRef));
+    if (problems.length > 0) {
+      throw new Error(`Requisição que a API real recusaria: ${problems.join('; ')}`);
+    }
+    this.lastByConversation.set(request.conversationRef, structuredClone(request));
     this.requests.push(structuredClone(request));
     const step = this.steps.shift();
     if (!step) throw new Error('ScriptedLlm: roteiro esgotado (chamada inesperada ao modelo)');

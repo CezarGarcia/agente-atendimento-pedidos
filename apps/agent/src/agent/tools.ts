@@ -136,7 +136,10 @@ const InputSchemas = {
 
 /** Estado acumulado durante um turno: é o que os guardrails usam para conferir a resposta. */
 export interface TurnState {
+  /** Pedidos que a API mostrou cancelados nesta conversa (inclui turnos anteriores). */
   readonly verifiedCancelledOrderIds: Set<string>;
+  /** Pedidos que a API mostrou cancelados neste turno. */
+  readonly verifiedThisTurn: Set<string>;
   readonly toolCalls: ToolCallTrace[];
   handoff: HandoffTicket | null;
   /** Confirmação criada neste turno: encerra o turno com a pergunta de confirmação. */
@@ -220,7 +223,7 @@ export class ToolExecutor {
       }
       case TOOL.listOrders:
         return customerId
-          ? this.listOrders(customerId)
+          ? this.listOrders(customerId, turn)
           : failure('sem_cliente', 'Cliente não identificado.');
       case TOOL.requestCancellation: {
         const input = InputSchemas[TOOL.requestCancellation].safeParse(block.input);
@@ -253,7 +256,7 @@ export class ToolExecutor {
     if (result.kind === 'technical_error') return technicalError(result.reason);
 
     const { order } = result;
-    if (order.status === 'CANCELLED') turn.verifiedCancelledOrderIds.add(order.id);
+    if (order.status === 'CANCELLED') markCancelled(turn, order.id);
     const catalog = await this.loadCatalog(order);
     return {
       outcome: `encontrado:${order.status}`,
@@ -270,9 +273,12 @@ export class ToolExecutor {
     };
   }
 
-  private async listOrders(customerId: string): Promise<ToolOutcome> {
+  private async listOrders(customerId: string, turn: TurnState): Promise<ToolOutcome> {
     const result = await this.deps.orders.listOrders(customerId, 5);
     if (result.kind === 'technical_error') return technicalError(result.reason);
+    for (const order of result.orders) {
+      if (order.status === 'CANCELLED') markCancelled(turn, order.id);
+    }
     return {
       outcome: `listados:${result.orders.length}`,
       payload: {
@@ -310,7 +316,7 @@ export class ToolExecutor {
 
     const { order } = result;
     if (!order.cancellation.eligible) {
-      if (order.status === 'CANCELLED') turn.verifiedCancelledOrderIds.add(order.id);
+      if (order.status === 'CANCELLED') markCancelled(turn, order.id);
       const blockedReason = order.cancellation.blockedReason ?? 'UNKNOWN_STATUS';
       return {
         outcome: `nao_cancelavel:${blockedReason}`,
@@ -327,7 +333,7 @@ export class ToolExecutor {
     }
 
     const open = await this.deps.store.findOpenPendingAction(conversation.id);
-    if (open) await this.deps.store.updatePendingAction(open.id, 'superseded');
+    if (open) await this.deps.store.updatePendingAction(open.id, { status: 'superseded' });
 
     const catalog = await this.loadCatalog(order);
     const now = this.deps.now();
@@ -339,6 +345,7 @@ export class ToolExecutor {
       reason: reason === null ? null : redactPii(reason).text,
       orderSummary: summarizeOrder(order, catalog.products),
       status: 'awaiting_confirmation',
+      awaitingTextReply: true,
       createdAt: now,
       expiresAt: new Date(now.getTime() + this.deps.confirmationTtlMs),
     };
@@ -453,12 +460,22 @@ function summarizeOrder(order: ApiOrder, products: ReadonlyMap<number, CatalogLo
   const first = order.items[0];
   const lookup = first ? products.get(first.productId) : undefined;
   const title = lookup?.status === 'found' ? lookup.product.title : null;
-  const shortTitle = title && title.length > 50 ? `${title.slice(0, 49).trimEnd()}…` : title;
+  // Título do catálogo externo: vai entre aspas (é dado, não instrução) e sem aspas internas.
+  const cleanTitle = title?.replace(/["“”]/g, '') ?? null;
+  const shortTitle =
+    cleanTitle && cleanTitle.length > 45
+      ? `"${cleanTitle.slice(0, 44).trimEnd()}…"`
+      : cleanTitle && `"${cleanTitle}"`;
   const others = order.items.length - 1;
   const items = shortTitle
     ? `${shortTitle}${others > 0 ? ` e mais ${others} ${others === 1 ? 'item' : 'itens'}` : ''}`
     : `${order.items.length} ${order.items.length === 1 ? 'item' : 'itens'}`;
   return `${items}, total ${order.total.formatted}`;
+}
+
+function markCancelled(turn: TurnState, orderId: string): void {
+  turn.verifiedCancelledOrderIds.add(orderId);
+  turn.verifiedThisTurn.add(orderId);
 }
 
 const failure = (code: string, message: string): ToolOutcome => ({

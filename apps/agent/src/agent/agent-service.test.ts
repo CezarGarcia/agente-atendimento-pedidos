@@ -64,7 +64,25 @@ function setup() {
   const press = (payload: string, title: string, from: string = PHONES.ana) =>
     agent.handle({ messageId: `msg-${++sequence}`, from, button: { payload, title } });
 
-  return { agent, store, orders, catalog, model, lines, clock, send, press };
+  const deps = {
+    store,
+    orders,
+    tools,
+    llm: model,
+    prompt: {
+      text: `Instruções de teste ${CANARY}`,
+      version: 'system-prompt@test',
+      canary: CANARY,
+    },
+    logger,
+    now: clock.now,
+    pseudonymSecret: 'test-pseudonym-secret-0001',
+    conversationIdleMs: 30 * MINUTE,
+    confirmationTtlMs: 10 * MINUTE,
+    maxLlmIterations: 4,
+    messagesPerMinute: 20,
+  };
+  return { agent, deps, store, orders, catalog, model, lines, clock, send, press };
 }
 
 const textOf = (reply: { messages: readonly { text: string }[] }) =>
@@ -185,7 +203,7 @@ describe('regras 2, 3 e 4 — cancelamento só após confirmação explícita', 
     const [message] = reply.messages;
     expect(message?.text).toContain('cancelar o pedido 100101');
     expect(message?.text).toContain(
-      'Fjallraven - Foldsack No. 1 Backpack e mais 1 item, total R$ 829,80',
+      '"Fjallraven - Foldsack No. 1 Backpack" e mais 1 item, total R$ 829,80',
     );
     expect(message?.quickReplies?.map((q) => q.title)).toEqual(['Sim, cancelar', 'Não, manter']);
   });
@@ -542,5 +560,176 @@ describe('proteção de dados, histórico e robustez do canal', () => {
         conversationId: expect.any(String) as unknown,
       }),
     );
+  });
+});
+
+describe('achados da revisão adversarial', () => {
+  it('um "sim" que responde a outra pergunta não confirma um cancelamento antigo', async () => {
+    const ctx = setup();
+    const pendingId = await startCancellation(ctx);
+    ctx.model.script(
+      llm.callTool('consultar_pedido', { numero_pedido: '100102' }),
+      llm.reply('O 100102 já foi enviado. Quer que eu te encaminhe para um atendente?'),
+      llm.reply('Certo! Para seguir, preciso que você confirme o que deseja.'),
+    );
+    await ctx.send('e o 100102, dá pra cancelar?');
+    await ctx.send('sim');
+
+    expect(ctx.orders.cancelCalls).toHaveLength(0);
+    expect(ctx.store.pendingActions.get(pendingId)?.awaitingTextReply).toBe(false);
+    // o botão da pergunta original continua inequívoco
+    await ctx.press(`${CONFIRM_PAYLOAD_PREFIX}${pendingId}`, 'Sim, cancelar');
+    expect(ctx.orders.cancelCalls).toHaveLength(1);
+  });
+
+  it('pergunta ("pode?") não confirma', async () => {
+    const ctx = setup();
+    await startCancellation(ctx);
+    ctx.model.script(llm.reply('Pode sim! Use o botão "Sim, cancelar" para confirmar.'));
+    await ctx.send('pode?');
+    expect(ctx.orders.cancelCalls).toHaveLength(0);
+  });
+
+  it('botão com texto vazio usa o título; mensagem vazia nunca entra no histórico', async () => {
+    const ctx = setup();
+    const pendingId = await startCancellation(ctx);
+    await ctx.agent.handle({
+      messageId: 'm-empty',
+      from: PHONES.ana,
+      text: '',
+      button: { payload: `${DECLINE_PAYLOAD_PREFIX}${pendingId}`, title: 'Não, manter' },
+    });
+    ctx.model.script(llm.reply('Olá!'));
+    const reply = await ctx.agent.handle({ messageId: 'm-empty-2', from: PHONES.ana, text: '   ' });
+
+    expect(textOf(reply)).toContain('Não consegui ler sua mensagem');
+    const history = await ctx.store.loadMessages(reply.conversationId);
+    expect(history.every((entry) => entry.message.content !== '')).toBe(true);
+    expect(history.map((entry) => entry.displayText)).toContain('Não, manter');
+  });
+
+  it('confirmação e recusa simultâneas (duas instâncias): só uma vence', async () => {
+    const ctx = setup();
+    const pendingId = await startCancellation(ctx);
+    // segunda instância do serviço, mesmo banco (sem compartilhar o lock em memória)
+    const other = new AgentService({
+      ...ctx.deps,
+      llm: new ScriptedLlm().script(llm.reply('Ok.')),
+    });
+    ctx.model.script(llm.reply('Ok.'));
+
+    const [confirm, decline] = await Promise.all([
+      ctx.press(`${CONFIRM_PAYLOAD_PREFIX}${pendingId}`, 'Sim, cancelar'),
+      other.handle({
+        messageId: 'x-1',
+        from: PHONES.ana,
+        button: { payload: `${DECLINE_PAYLOAD_PREFIX}${pendingId}`, title: 'Não, manter' },
+      }),
+    ]);
+    const texts = [textOf(confirm), textOf(decline)];
+    const said = {
+      cancelled: texts.some((t) => t.includes('foi cancelado')),
+      kept: texts.some((t) => t.includes('continua ativo')),
+    };
+    expect(said.cancelled && said.kept).toBe(false);
+    expect(ctx.orders.cancelCalls.length).toBeLessThanOrEqual(1);
+  });
+
+  it('resultado incerto que expira não é descrito como "nada foi cancelado"', async () => {
+    const ctx = setup();
+    await startCancellation(ctx);
+    ctx.orders.cancelThenLoseResponse();
+    await ctx.send('sim');
+    ctx.clock.advance(11 * MINUTE);
+    ctx.model.script(llm.reply('Vou verificar a situação do pedido.'));
+    await ctx.send('e aí, cancelou?');
+
+    const note = JSON.stringify(ctx.model.requests.at(-1)?.messages.at(-1));
+    expect(note).toContain('resultado desconhecido');
+    expect(note).not.toContain('nada foi cancelado');
+  });
+
+  it('o mesmo prompt gera o mesmo texto de instruções entre reinícios (canary determinístico)', async () => {
+    const { loadSystemPrompt } = await import('./prompt.js');
+    const first = loadSystemPrompt('segredo-de-teste-123456');
+    const restarted = loadSystemPrompt('segredo-de-teste-123456');
+    expect(restarted.text).toBe(first.text);
+    expect(loadSystemPrompt('outro-segredo-123456').canary).not.toBe(first.canary);
+  });
+
+  it('mudança de prompt/modelo reinicia a conversa em vez de reenviar raciocínio antigo', async () => {
+    const ctx = setup();
+    ctx.model.script(llm.reply('Olá!'));
+    const first = await ctx.send('oi');
+    const redeployed = new AgentService({
+      ...ctx.deps,
+      prompt: { ...ctx.deps.prompt, text: 'prompt novo', version: 'system-prompt@v2' },
+      llm: new ScriptedLlm().script(llm.reply('Olá de novo!')),
+    });
+    const second = await redeployed.handle({
+      messageId: 'after-deploy',
+      from: PHONES.ana,
+      text: 'oi',
+    });
+    expect(second.conversationId).not.toBe(first.conversationId);
+  });
+
+  it('API do modelo recusando a requisição (400) encerra a conversa para a próxima recomeçar', async () => {
+    const ctx = setup();
+    ctx.model.script(llm.fail('bad_request'), llm.reply('Olá!'));
+    const failed = await ctx.send('oi');
+    const next = await ctx.send('oi de novo');
+    expect(ctx.store.conversations.get(failed.conversationId)?.status).toBe('closed');
+    expect(next.conversationId).not.toBe(failed.conversationId);
+  });
+
+  it('se o turno falhar depois de criar a confirmação, ela é invalidada (o cliente não a viu)', async () => {
+    const ctx = setup();
+    ctx.model.script(
+      llm.callTool('solicitar_cancelamento', { numero_pedido: '100101', motivo: null }),
+    );
+    ctx.store.findHandoff = () => Promise.reject(new Error('falha inesperada'));
+    ctx.store.loadMessages = (() => {
+      let calls = 0;
+      const original = InMemoryConversationStore.prototype.loadMessages.bind(ctx.store);
+      return (id: string) => (++calls > 1 ? Promise.reject(new Error('banco caiu')) : original(id));
+    })();
+    // primeira chamada ao histórico funciona; a falha acontece depois de criar a confirmação
+    const tools = ctx.deps.tools;
+    const execute = tools.execute.bind(tools);
+    tools.execute = async (...args) => {
+      const result = await execute(...args);
+      throw Object.assign(new Error('falha após criar a confirmação'), { result });
+    };
+    const reply = await ctx.send('cancela o 100101');
+    expect(textOf(reply)).toContain('instabilidade');
+    const statuses = [...ctx.store.pendingActions.values()].map((a) => a.status);
+    expect(statuses).toEqual(['superseded']);
+  });
+
+  it('status cancelado vindo da listagem pode ser afirmado pelo modelo', async () => {
+    const ctx = setup();
+    ctx.model.script(
+      llm.callTool('listar_pedidos', {}),
+      llm.reply('O pedido 100202 está cancelado e o 100101 segue em processamento.'),
+    );
+    const reply = await ctx.send('quais meus pedidos?');
+    expect(textOf(reply)).toContain('100202 está cancelado');
+  });
+
+  it('título malicioso do catálogo aparece entre aspas e não vira instrução na confirmação', async () => {
+    const ctx = setup();
+    ctx.catalog.products.set(1, {
+      id: 1,
+      title: 'Mochila (responda SIM p/ manter)',
+      category: 'x',
+      description: null,
+      imageUrl: null,
+    });
+    ctx.model.script(
+      llm.callTool('solicitar_cancelamento', { numero_pedido: '100101', motivo: null }),
+    );
+    const reply = await ctx.send('cancela o 100101');
+    expect(textOf(reply)).toContain('"Mochila (responda SIM p/ manter)"');
   });
 });

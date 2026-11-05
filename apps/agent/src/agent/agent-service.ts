@@ -3,6 +3,7 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   addContextFields,
   pseudonymize,
+  redactPii,
   resolveCorrelationId,
   runWithContext,
   type Logger,
@@ -48,13 +49,17 @@ interface TurnOutcome {
   readonly messages: readonly OutgoingMessage[];
   /** O que entra no histórico (mensagem do cliente + resposta), sempre acrescentado ao final. */
   readonly stored: readonly StoredMessage[];
+  /** Encerra a conversa após o turno (ex.: a API do modelo recusou o histórico). */
+  readonly closeConversation?: boolean;
 }
 
-const userMessage = (text: string): StoredMessage => ({
-  message: { role: 'user', content: text },
-  kind: 'customer',
-  displayText: text,
-});
+/** Texto do cliente nunca é vazio no histórico: a API do modelo recusa mensagens vazias. */
+const EMPTY_PLACEHOLDER = '[mensagem sem texto]';
+
+const userMessage = (text: string): StoredMessage => {
+  const content = text.trim() === '' ? EMPTY_PLACEHOLDER : text;
+  return { message: { role: 'user', content }, kind: 'customer', displayText: content };
+};
 
 const assistantText = (text: string): StoredMessage => ({
   message: { role: 'assistant', content: [{ type: 'text', text }] },
@@ -69,23 +74,27 @@ const textOf = (content: readonly Anthropic.ContentBlock[]): string =>
     .join('\n')
     .trim();
 
+const OPEN_STATUSES = ['awaiting_confirmation', 'outcome_unknown'] as const;
+
 /**
  * Orquestrador do atendimento. A cada mensagem:
  *
- *  1. deduplica (webhooks podem ser reentregues) e serializa por conversa;
+ *  1. reserva a mensagem (webhooks podem ser reentregues) e serializa por conversa;
  *  2. identifica o cliente pelo telefone verificado pelo canal (nunca pelo texto);
  *  3. aplica o guardrail de entrada (PII, sinais de manipulação, tamanho);
  *  4. se há confirmação pendente, interpreta a resposta SEM IA e executa o cancelamento via API;
  *  5. caso contrário, roda o modelo com ferramentas de menor privilégio;
  *  6. confere a resposta do modelo (guardrail de saída) antes de enviá-la;
- *  7. registra histórico (só acrescenta), trace do turno e logs estruturados.
+ *  7. grava o turno de forma atômica: histórico (só acrescenta), trace e resposta.
  */
 export class AgentService {
   private readonly mutex = new KeyedMutex();
   private readonly limiter: SlidingWindowLimiter;
+  private readonly llmProfile: string;
 
   constructor(private readonly deps: AgentServiceDependencies) {
     this.limiter = new SlidingWindowLimiter(deps.messagesPerMinute, 60_000);
+    this.llmProfile = `${deps.prompt.version}|${deps.llm.model}`;
   }
 
   async handle(message: IncomingMessage, incomingCorrelationId?: string): Promise<AgentReply> {
@@ -98,6 +107,15 @@ export class AgentService {
     );
   }
 
+  /** Encerra a conversa ativa do telefone (a próxima mensagem inicia outra). Usado pelo simulador. */
+  async endConversation(from: string): Promise<void> {
+    const phoneRef = pseudonymize(normalizePhone(from), this.deps.pseudonymSecret, 'tel');
+    await this.mutex.run(phoneRef, async () => {
+      const active = await this.deps.store.findActiveConversation(phoneRef, new Date(0));
+      if (active) await this.deps.store.closeConversation(active.id);
+    });
+  }
+
   private async process(
     message: IncomingMessage,
     phone: string,
@@ -105,13 +123,15 @@ export class AgentService {
     correlationId: string,
   ): Promise<AgentReply> {
     const { store, logger } = this.deps;
-    const duplicate = await store.findProcessedMessage(message.messageId);
-    if (duplicate) {
+    // A chave inclui o remetente: ids de mensagem só precisam ser únicos por remetente.
+    const messageKey = `${phoneRef}:${message.messageId}`;
+    const claim = await store.claimMessage(messageKey);
+    if (claim.status === 'duplicate') {
       logger.info(
-        { event: 'agent.duplicate_message' },
+        { event: 'agent.duplicate_message', inProgress: claim.reply === null },
         'mensagem repetida: resposta reaproveitada',
       );
-      return duplicate;
+      return claim.reply ?? { conversationId: '', correlationId, messages: [] };
     }
 
     const startedAt = Date.now();
@@ -131,12 +151,25 @@ export class AgentService {
       toolCalls: [],
       responseSource: 'unknown',
     };
+    const turn: TurnState = {
+      verifiedCancelledOrderIds: new Set(),
+      verifiedThisTurn: new Set(),
+      toolCalls: trace.toolCalls,
+      handoff: null,
+      pendingCreated: null,
+    };
 
     let outcome: TurnOutcome;
     try {
-      outcome = await this.decide(message, conversation, trace, now);
+      outcome = await this.decide(message, conversation, trace, turn, now);
     } catch (error) {
       logger.error({ event: 'agent.turn_failed', err: error }, 'falha inesperada no turno');
+      // O cliente não viu a pergunta de confirmação deste turno: ela não pode ficar valendo.
+      if (turn.pendingCreated) {
+        await store
+          .updatePendingAction(turn.pendingCreated.id, { status: 'superseded' })
+          .catch(() => undefined);
+      }
       const fallback = templates.llmUnavailable();
       trace.responseSource = 'template:llmUnavailable';
       outcome = {
@@ -145,17 +178,21 @@ export class AgentService {
       };
     }
 
-    await store.appendMessages(conversation.id, outcome.stored);
-    await store.touchConversation(conversation.id, now);
     trace.durationMs = Date.now() - startedAt;
-    await store.saveTrace(trace);
-
     const reply: AgentReply = {
       conversationId: conversation.id,
       correlationId,
       messages: outcome.messages,
     };
-    await store.saveProcessedMessage(message.messageId, reply);
+    await store.completeTurn({
+      messageKey,
+      conversationId: conversation.id,
+      messages: outcome.stored,
+      at: now,
+      trace,
+      reply,
+    });
+    if (outcome.closeConversation) await store.closeConversation(conversation.id);
 
     logger.info(
       {
@@ -183,7 +220,22 @@ export class AgentService {
   ): Promise<Conversation> {
     const { store, orders, logger } = this.deps;
     const idleSince = new Date(now.getTime() - this.deps.conversationIdleMs);
-    const existing = await store.findActiveConversation(phoneRef, idleSince);
+    let existing = await store.findActiveConversation(phoneRef, idleSince);
+
+    // Um prompt ou modelo novo (deploy) não pode reaproveitar um histórico com raciocínio gerado
+    // sob outro prefixo: a conversa antiga é encerrada e outra começa.
+    if (existing && existing.llmProfile !== this.llmProfile) {
+      await store.closeConversation(existing.id);
+      logger.info(
+        {
+          event: 'agent.conversation_rotated',
+          conversationId: existing.id,
+          reason: 'llm_profile_changed',
+        },
+        'conversa reiniciada após mudança de prompt ou modelo',
+      );
+      existing = null;
+    }
     if (existing && existing.identityStatus !== 'lookup_failed') return existing;
 
     // Identidade = telefone verificado pela plataforma de mensagens. Nunca o que o cliente digita.
@@ -208,7 +260,11 @@ export class AgentService {
       await store.updateConversation(existing.id, identity);
       return { ...existing, ...identity };
     }
-    const created = await store.createConversation({ phoneRef, ...identity });
+    const created = await store.createConversation({
+      phoneRef,
+      llmProfile: this.llmProfile,
+      ...identity,
+    });
     logger.info(
       {
         event: 'agent.conversation_started',
@@ -224,6 +280,7 @@ export class AgentService {
     message: IncomingMessage,
     conversation: Conversation,
     trace: TurnTrace,
+    turn: TurnState,
     now: Date,
   ): Promise<TurnOutcome> {
     const inspection = inspectInput(inputText(message));
@@ -251,8 +308,7 @@ export class AgentService {
     if (conversation.identityStatus === 'lookup_failed') {
       return respond('identityUnavailable', templates.identityUnavailable());
     }
-    if (inspection.empty && !message.button)
-      return respond('emptyMessage', templates.emptyMessage());
+    if (inspection.empty) return respond('emptyMessage', templates.emptyMessage());
     if (inspection.tooLong) {
       trace.inputGuard.truncated = true;
       return respond('messageTooLong', templates.messageTooLong());
@@ -268,24 +324,49 @@ export class AgentService {
     let pending = await this.deps.store.findOpenPendingAction(conversation.id);
     let expired: PendingAction | null = null;
     if (pending && pending.expiresAt <= now) {
-      await this.deps.store.updatePendingAction(pending.id, 'expired');
+      await this.deps.store.updatePendingAction(pending.id, { status: 'expired' });
       expired = pending;
       pending = null;
     }
     if (pending) {
-      const decision = interpretConfirmation(pending.id, {
-        text: message.text,
-        buttonPayload: message.button?.payload,
-      });
+      const decision = interpretConfirmation(
+        pending.id,
+        { text: message.text, buttonPayload: message.button?.payload },
+        { acceptText: pending.awaitingTextReply },
+      );
       trace.confirmation = { decision, orderId: pending.orderId };
       if (decision !== 'unclear') {
-        trace.path = 'confirmation';
-        return this.resolvePending(pending, decision, conversation, inspection, trace, now);
+        // Reserva atômica: se outra requisição/instância já tratou a ação, segue sem ela.
+        const target = decision === 'confirm' ? 'executing' : 'declined';
+        if (await this.deps.store.transitionPendingAction(pending.id, OPEN_STATUSES, target)) {
+          trace.path = 'confirmation';
+          return this.resolvePending(pending, decision, conversation, inspection, trace, now);
+        }
+        this.deps.logger.info(
+          { event: 'agent.pending_already_handled' },
+          'ação pendente já tratada por outra requisição',
+        );
+        trace.confirmation.outcome = 'already_handled';
+        pending = null;
       }
     }
 
     trace.path = 'llm';
-    return this.runModel(conversation, inspection, pending, expired, trace, now);
+    const outcome = await this.runModel(
+      conversation,
+      inspection,
+      pending,
+      expired,
+      trace,
+      turn,
+      now,
+    );
+    // Depois de uma resposta do modelo, um "sim" em texto já não se refere à pergunta de
+    // confirmação: só o botão (ou uma nova solicitação) confirma.
+    if (pending && turn.pendingCreated === null) {
+      await this.deps.store.updatePendingAction(pending.id, { awaitingTextReply: false });
+    }
+    return outcome;
   }
 
   private async resolvePending(
@@ -307,7 +388,6 @@ export class AgentService {
     };
 
     if (decision === 'decline') {
-      await store.updatePendingAction(pending.id, 'declined');
       logger.info(
         { event: 'agent.cancellation.declined', orderId: pending.orderId },
         'cliente manteve o pedido',
@@ -322,6 +402,7 @@ export class AgentService {
     }
 
     if (!conversation.customerId) {
+      await store.updatePendingAction(pending.id, { status: 'rejected' });
       return finish('identityUnavailable', templates.identityUnavailable(), 'no_identity');
     }
 
@@ -338,7 +419,7 @@ export class AgentService {
 
     switch (result.kind) {
       case 'cancelled':
-        await store.updatePendingAction(pending.id, 'completed');
+        await store.updatePendingAction(pending.id, { status: 'completed' });
         logger.info(
           { event: 'agent.cancellation.completed', orderId: pending.orderId },
           'pedido cancelado',
@@ -349,7 +430,7 @@ export class AgentService {
           'cancelled',
         );
       case 'not_cancellable':
-        await store.updatePendingAction(pending.id, 'rejected');
+        await store.updatePendingAction(pending.id, { status: 'rejected' });
         logger.info(
           { event: 'agent.cancellation.rejected', orderId: pending.orderId, reason: result.reason },
           'API recusou o cancelamento',
@@ -360,17 +441,20 @@ export class AgentService {
           `not_cancellable:${result.reason}`,
         );
       case 'not_found':
-        await store.updatePendingAction(pending.id, 'rejected');
+        await store.updatePendingAction(pending.id, { status: 'rejected' });
         return finish(
           'cancellationOrderNotFound',
           templates.cancellationOrderNotFound(pending.orderId),
           'not_found',
         );
       case 'technical_error': {
-        // Resultado desconhecido: não é sucesso nem fracasso (regra 6). Mantém a ação aberta para
+        // Resultado desconhecido: não é sucesso nem fracasso (regra 6). A ação fica aberta para
         // uma nova tentativa segura com a mesma chave de idempotência.
-        const extended = new Date(now.getTime() + this.deps.confirmationTtlMs);
-        await store.updatePendingAction(pending.id, 'outcome_unknown', extended);
+        await store.updatePendingAction(pending.id, {
+          status: 'outcome_unknown',
+          expiresAt: new Date(now.getTime() + this.deps.confirmationTtlMs),
+          awaitingTextReply: true,
+        });
         logger.warn(
           {
             event: 'agent.cancellation.outcome_unknown',
@@ -394,16 +478,14 @@ export class AgentService {
     pending: PendingAction | null,
     expired: PendingAction | null,
     trace: TurnTrace,
+    turn: TurnState,
     now: Date,
   ): Promise<TurnOutcome> {
     const { store, llm, logger, prompt } = this.deps;
     const history = await store.loadMessages(conversation.id);
-    const turn: TurnState = {
-      verifiedCancelledOrderIds: await this.verifiedCancellations(conversation.id, history),
-      toolCalls: trace.toolCalls,
-      handoff: null,
-      pendingCreated: null,
-    };
+    for (const orderId of await this.verifiedCancellations(conversation.id, history)) {
+      turn.verifiedCancelledOrderIds.add(orderId);
+    }
     const added: StoredMessage[] = [
       userMessage(inspection.text),
       {
@@ -429,7 +511,10 @@ export class AgentService {
       } catch (error) {
         const reason = error instanceof LlmUnavailableError ? error.reason : 'unknown';
         logger.error({ event: 'agent.llm_unavailable', reason, iteration }, 'modelo indisponível');
-        return this.closeTurn(added, 'llmUnavailable', templates.llmUnavailable(), trace);
+        const result = this.closeTurn(added, 'llmUnavailable', templates.llmUnavailable(), trace);
+        // 400: a API recusou a requisição (ex.: histórico incompatível). Repetir com o mesmo
+        // histórico falharia de novo; a próxima mensagem começa uma conversa nova.
+        return reason === 'bad_request' ? { ...result, closeConversation: true } : result;
       }
 
       trace.llmCalls.push({
@@ -456,10 +541,11 @@ export class AgentService {
         'chamada ao modelo',
       );
 
+      const preview = textOf(response.content);
       const assistantMessage: StoredMessage = {
         message: { role: 'assistant', content: [...response.content] },
         kind: 'agent',
-        displayText: textOf(response.content) || null,
+        displayText: preview ? redactPii(preview).text : null,
       };
 
       if (response.stopReason === 'tool_use') {
@@ -490,8 +576,9 @@ export class AgentService {
       }
 
       if (response.stopReason === 'end_turn' || response.stopReason === 'stop_sequence') {
-        const guard = guardOutput(textOf(response.content), {
+        const guard = guardOutput(preview, {
           verifiedCancelledOrderIds: turn.verifiedCancelledOrderIds,
+          verifiedThisTurn: turn.verifiedThisTurn,
           handoffCreated: turn.handoff !== null,
           canary: prompt.canary,
         });
@@ -539,7 +626,10 @@ export class AgentService {
     return { messages: [reply], stored: [...added, assistantText(reply.text)] };
   }
 
-  /** Estado confiável da sessão, entregue ao modelo como mensagem de sistema (canal do operador). */
+  /**
+   * Estado confiável da sessão, entregue ao modelo como mensagem de sistema (canal do operador).
+   * O primeiro nome é o único dado pessoal no histórico (usado na saudação).
+   */
   private sessionNotes(
     conversation: Conversation,
     inspection: InputInspection,
@@ -557,17 +647,22 @@ export class AgentService {
     if (pending?.status === 'outcome_unknown') {
       lines.push(
         `Uma tentativa de cancelar o pedido ${pending.orderId} teve resultado desconhecido por falha ` +
-          'técnica. Se o cliente quiser tentar de novo, peça que responda SIM.',
+          'técnica. Não afirme se ele foi ou não cancelado; para saber, consulte o pedido.',
       );
     } else if (pending) {
       lines.push(
         `Há uma confirmação de cancelamento pendente para o pedido ${pending.orderId} ` +
-          `(válida até ${formatTime(pending.expiresAt)}). A última mensagem do cliente não foi uma ` +
-          'confirmação clara: se ele quiser cancelar, peça que responda SIM; para manter, NÃO. Se mudou ' +
-          'de assunto, atenda normalmente. Nada foi cancelado ainda.',
+          `(válida até ${formatTime(pending.expiresAt)}) e a última mensagem do cliente não a ` +
+          'confirmou. Nada foi cancelado ainda. Responda ao que o cliente disse; se ele quiser ' +
+          'cancelar, use solicitar_cancelamento para reenviar a confirmação.',
       );
     }
-    if (expired) {
+    if (expired?.status === 'outcome_unknown') {
+      lines.push(
+        `Uma tentativa anterior de cancelar o pedido ${expired.orderId} teve resultado desconhecido. ` +
+          'Antes de afirmar qualquer coisa sobre ele, consulte o pedido.',
+      );
+    } else if (expired) {
       lines.push(
         `A confirmação de cancelamento do pedido ${expired.orderId} expirou sem resposta e nada foi ` +
           'cancelado. Se o cliente ainda quiser cancelar, use solicitar_cancelamento novamente.',
@@ -593,7 +688,7 @@ export class AgentService {
 
   /**
    * Pedidos que a API confirmou estarem cancelados nesta conversa: cancelamentos concluídos e
-   * consultas que retornaram status cancelado. É a base do guardrail da regra 5.
+   * consultas/listagens que retornaram status cancelado. É a base do guardrail da regra 5.
    */
   private async verifiedCancellations(
     conversationId: string,
@@ -607,32 +702,45 @@ export class AgentService {
       if (entry.kind !== 'tool' || typeof entry.message.content === 'string') continue;
       for (const block of entry.message.content) {
         if (block.type !== 'tool_result' || typeof block.content !== 'string') continue;
-        try {
-          const payload = JSON.parse(block.content) as {
-            pedido?: { numero?: string; status?: string } | string;
-            status?: string;
-          };
-          if (
-            typeof payload.pedido === 'object' &&
-            payload.pedido.status === 'cancelado' &&
-            payload.pedido.numero
-          ) {
-            verified.add(payload.pedido.numero);
-          }
-          if (typeof payload.pedido === 'string' && payload.status === 'cancelado') {
-            verified.add(payload.pedido);
-          }
-        } catch {
-          // resultado não-JSON: ignora
-        }
+        for (const orderId of cancelledOrdersIn(block.content)) verified.add(orderId);
       }
     }
     return verified;
   }
 }
 
+/** Extrai, de um resultado de ferramenta (JSON gerado por nós), pedidos com status cancelado. */
+function cancelledOrdersIn(content: string): string[] {
+  try {
+    const payload = JSON.parse(content) as {
+      pedido?: { numero?: string; status?: string } | string;
+      status?: string;
+      pedidos?: { numero?: string; status?: string }[];
+    };
+    const found: string[] = [];
+    if (
+      typeof payload.pedido === 'object' &&
+      payload.pedido.status === 'cancelado' &&
+      payload.pedido.numero
+    ) {
+      found.push(payload.pedido.numero);
+    }
+    if (typeof payload.pedido === 'string' && payload.status === 'cancelado') {
+      found.push(payload.pedido);
+    }
+    for (const order of payload.pedidos ?? []) {
+      if (order.status === 'cancelado' && order.numero) found.push(order.numero);
+    }
+    return found;
+  } catch {
+    return [];
+  }
+}
+
+/** Texto do cliente; se vier vazio (ex.: toque em botão), usa o título do botão. */
 function inputText(message: IncomingMessage): string {
-  return message.text ?? message.button?.title ?? '';
+  if (message.text?.trim()) return message.text;
+  return message.button?.title.trim() ?? '';
 }
 
 export function normalizePhone(raw: string): string {
