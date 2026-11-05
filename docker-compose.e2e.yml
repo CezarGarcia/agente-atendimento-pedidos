@@ -1,0 +1,25 @@
+# Sobreposição para testes ponta a ponta e demonstração sem chave de API:
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --wait
+# Substitui, na fronteira de rede, o modelo de IA e a Fake Store por stubs determinísticos.
+# O código do agente roda exatamente como em produção.
+services:
+  stubs:
+    image: node:22-alpine
+    working_dir: /stubs
+    command: ['node', 'stub-server.ts']
+    volumes:
+      - ./e2e/stubs:/stubs:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4010/health > /dev/null || exit 1']
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  agent:
+    environment:
+      ANTHROPIC_API_KEY: stub-key-not-a-real-key
+      ANTHROPIC_BASE_URL: http://stubs:4010
+      FAKESTORE_BASE_URL: http://stubs:4010
+    depends_on:
+      stubs:
+        condition: service_healthy

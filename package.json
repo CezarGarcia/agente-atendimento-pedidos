@@ -6,7 +6,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "e2e"
   ],
   "engines": {
     "node": ">=22.12.0"
@@ -20,7 +21,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "e2e:up": "docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build --wait",
+    "e2e:down": "docker compose -f docker-compose.yml -f docker-compose.e2e.yml down -v",
+    "test:e2e": "vitest run --config e2e/vitest.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

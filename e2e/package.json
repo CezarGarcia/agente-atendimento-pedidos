@@ -1,0 +1,14 @@
+{
+  "name": "@agente/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Testes ponta a ponta: stack completa via Docker Compose, com stubs na fronteira de rede (modelo de IA e Fake Store).",
+  "type": "module",
+  "scripts": {
+    "stubs": "tsx stubs/stub-server.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}
