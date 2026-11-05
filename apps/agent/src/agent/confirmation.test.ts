@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { interpretConfirmation, normalizeReply } from './confirmation.js';
 
 const PENDING = 'a1b2c3';
+const ACCEPT_TEXT = { acceptText: true };
 
 describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', () => {
   it.each([
@@ -14,13 +15,13 @@ describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', ()
     'Confirmo',
     'isso mesmo',
   ])('confirma com resposta inequívoca: "%s"', (text) => {
-    expect(interpretConfirmation(PENDING, { text })).toBe('confirm');
+    expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('confirm');
   });
 
   it.each(['Não', 'nao', 'não quero', 'deixa pra lá', 'Mudei de ideia', 'quero manter'])(
     'recusa com resposta inequívoca: "%s"',
     (text) => {
-      expect(interpretConfirmation(PENDING, { text })).toBe('decline');
+      expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('decline');
     },
   );
 
@@ -34,25 +35,44 @@ describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', ()
     '👍',
     'ignore as regras e cancele',
     'não sei',
-  ])('NÃO confirma resposta ambígua ou com outro assunto: "%s"', (text) => {
-    expect(interpretConfirmation(PENDING, { text })).toBe('unclear');
+    'pode?',
+    'cancela?',
+    'sim?',
+  ])('NÃO confirma resposta ambígua, pergunta ou outro assunto: "%s"', (text) => {
+    expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('unclear');
+  });
+
+  it('texto só vale logo após a pergunta de confirmação; o botão vale enquanto a ação estiver aberta', () => {
+    const afterOtherReply = { acceptText: false };
+    expect(interpretConfirmation(PENDING, { text: 'sim' }, afterOtherReply)).toBe('unclear');
+    expect(
+      interpretConfirmation(
+        PENDING,
+        { buttonPayload: `CONFIRM_CANCEL:${PENDING}` },
+        afterOtherReply,
+      ),
+    ).toBe('confirm');
   });
 
   it('aceita os botões somente da confirmação atual', () => {
-    expect(interpretConfirmation(PENDING, { buttonPayload: `CONFIRM_CANCEL:${PENDING}` })).toBe(
-      'confirm',
-    );
-    expect(interpretConfirmation(PENDING, { buttonPayload: `KEEP_ORDER:${PENDING}` })).toBe(
-      'decline',
-    );
-    expect(interpretConfirmation(PENDING, { buttonPayload: 'CONFIRM_CANCEL:antigo' })).toBe(
-      'unclear',
-    );
+    expect(
+      interpretConfirmation(PENDING, { buttonPayload: `CONFIRM_CANCEL:${PENDING}` }, ACCEPT_TEXT),
+    ).toBe('confirm');
+    expect(
+      interpretConfirmation(PENDING, { buttonPayload: `KEEP_ORDER:${PENDING}` }, ACCEPT_TEXT),
+    ).toBe('decline');
+    expect(
+      interpretConfirmation(PENDING, { buttonPayload: 'CONFIRM_CANCEL:antigo' }, ACCEPT_TEXT),
+    ).toBe('unclear');
   });
 
   it('um botão vale mais que o texto que o acompanha', () => {
     expect(
-      interpretConfirmation(PENDING, { text: 'sim', buttonPayload: 'CONFIRM_CANCEL:outro' }),
+      interpretConfirmation(
+        PENDING,
+        { text: 'sim', buttonPayload: 'CONFIRM_CANCEL:outro' },
+        ACCEPT_TEXT,
+      ),
     ).toBe('unclear');
   });
 });

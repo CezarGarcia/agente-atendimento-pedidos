@@ -1,11 +1,13 @@
 /**
  * Interpretação DETERMINÍSTICA da resposta do cliente a um pedido de confirmação (regra 4).
  *
- * O modelo de IA não participa desta decisão. Só contam como confirmação um botão com o id da
- * ação pendente ou uma resposta curta e inequívoca ("sim", "pode cancelar"). Qualquer outra
- * coisa ("acho que sim, mas...", "sim, mas é o outro pedido") é tratada como não confirmada e o
- * agente pergunta de novo. Em uma ação irreversível, é melhor perguntar duas vezes do que
- * cancelar errado.
+ * O modelo de IA não participa desta decisão. Só contam como confirmação:
+ *  - o botão com o id da ação pendente (inequívoco: diz a QUAL pergunta o cliente respondeu);
+ *  - uma resposta curta e inequívoca ("sim", "pode cancelar"), e somente se a última mensagem
+ *    enviada ao cliente foi a própria pergunta de confirmação. Depois de qualquer outra resposta
+ *    do agente, um "sim" pode estar respondendo outra coisa (ex.: "quer falar com um atendente?").
+ * Qualquer outra coisa ("acho que sim, mas...", "pode?") é tratada como não confirmada. Em uma
+ * ação irreversível, é melhor perguntar duas vezes do que cancelar errado.
  */
 
 export type ConfirmationDecision = 'confirm' | 'decline' | 'unclear';
@@ -90,6 +92,7 @@ export function normalizeReply(text: string): string {
 export function interpretConfirmation(
   pendingActionId: string,
   reply: { text?: string | undefined; buttonPayload?: string | undefined },
+  options: { acceptText: boolean },
 ): ConfirmationDecision {
   if (reply.buttonPayload !== undefined) {
     if (reply.buttonPayload === `${CONFIRM_PAYLOAD_PREFIX}${pendingActionId}`) return 'confirm';
@@ -98,7 +101,10 @@ export function interpretConfirmation(
     return 'unclear';
   }
 
-  const normalized = normalizeReply(reply.text ?? '');
+  const text = reply.text ?? '';
+  // Pergunta ("pode?", "cancela?") não é confirmação; e texto só vale logo após a pergunta.
+  if (!options.acceptText || text.includes('?')) return 'unclear';
+  const normalized = normalizeReply(text);
   if (CONFIRMATIONS.has(normalized)) return 'confirm';
   if (DECLINES.has(normalized)) return 'decline';
   return 'unclear';
