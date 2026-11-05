@@ -1,0 +1,10 @@
+/* A fonte do tema BoardUI é lida de --font-inter (carregada no index.html). */
+:root {
+  --font-inter: 'Inter';
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
