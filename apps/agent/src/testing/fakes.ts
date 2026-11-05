@@ -219,9 +219,12 @@ interface FakeOrder extends ApiOrder {
   customerId: string;
 }
 
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/** Mesmo formato da API de pedidos ("R$ 3.475,00"), com espaço comum no lugar do não separável. */
 const money = (amountCents: number) => ({
   amountCents,
-  formatted: `R$ ${(amountCents / 100).toFixed(2).replace('.', ',')}`,
+  formatted: brl.format(amountCents / 100).replace(/\u00A0/g, ' '),
 });
 
 const BLOCK_REASON: Record<string, string> = {
