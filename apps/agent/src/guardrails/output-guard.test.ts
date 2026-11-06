@@ -77,6 +77,17 @@ describe('guardOutput — regra 5: afirmar cancelamento só com sucesso da API',
     );
   });
 
+  it('[GU-21] valor com separador de milhar não separa o pedido da afirmação (resposta real)', () => {
+    const ctx = context({ verifiedCancelledOrderIds: new Set(['100202']) });
+    const reply =
+      'Seu pedido mais caro é o *100202* (R$ 3.475,00), mas ele já está *cancelado*, então não há nada a fazer nele.';
+    expect(guardOutput(reply, ctx).action).toBe('pass');
+    // E o separador não abre brecha: o pedido citado continua sendo conferido.
+    expect(guardOutput('O *100101* (R$ 3.475,00) já está cancelado.', ctx).reasons).toEqual([
+      'unverified_cancellation_claim',
+    ]);
+  });
+
   it('[GU-16] numa enumeração, a afirmação no singular vale para o número mais próximo', () => {
     const ctx = verified('100202');
     expect(
