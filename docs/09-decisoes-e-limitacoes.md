@@ -151,10 +151,13 @@ remetente. A lista completa, com evidência, está em [`evals/README.md`](evals/
 adversariais, o modelo não produziu nenhuma afirmação falsa; o que o guardrail barrava eram
 respostas corretas (o modelo citando a frase do atacante para recusá-la, explicando a regra,
 recusando o "conto" ou o JSON pedido). A rodada 9 tratou isso como defeito: cada recusa real
-virou teste (GU-24) e ganhou uma exceção estreita, e cada exceção passou por uma nova revisão
-white-box que tentou abusar dela (GU-25). Uma citação, por exemplo, só é menção quando a frase a
-recusa **e** a resposta diz o que é verdade. Das 22 respostas barradas em todas as rodadas, 20
-passam a sair; as duas que continuam barradas estão certas.
+virou teste (GU-24) e ganhou uma exceção estreita, e cada exceção passou por mais duas revisões
+white-box que tentaram abusar dela (GU-25: 127 ataques). Uma citação, por exemplo, só é menção
+quando a frase a recusa **e** a resposta diz o que é verdade. Das 46 respostas barradas em todas
+as rodadas, 42 passam a sair; das quatro restantes, uma está certa, duas repetem a fala do
+cliente sem consulta e uma só é barrada fora do contexto real. Cada revisão achou menos e mais
+rebuscado do que a anterior, mas ainda achou: regras têm cauda longa, e o próximo passo é um
+classificador semântico como segunda opinião (só bloqueia).
 
 ### D13. Mensagem fixa para situação de risco; afirmação de ação sem ferramenta é bloqueada
 

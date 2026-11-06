@@ -104,10 +104,12 @@ o modelo real, o guardrail funciona assim:
 O corpus das revisões está em
 [`output-guard.redteam.test.ts`](../apps/agent/src/guardrails/output-guard.redteam.test.ts): os
 ataques que passavam (GU-22, GU-25, GU-26) e as recusas reais do modelo que eram barradas (GU-23,
-GU-24, tiradas das rodadas de avaliação). Antes de cada mudança, as respostas barradas de todas as
-rodadas são reaplicadas ao guardrail novo: das 22 registradas, só duas continuam barradas, ambas
-de propósito (o modelo dizendo "Recebi seu SIM" sobre uma confirmação que não valia, e repetindo
-"seu pedido cancelado" sem ter consultado). Regras continuam sendo regras: uma paráfrase nova pode
+GU-24, tiradas das rodadas de avaliação). Cada exceção foi atacada por mais duas revisões
+white-box, e o que passava virou teste (GU-25). Antes de cada mudança, as respostas barradas de
+todas as rodadas são reaplicadas ao guardrail novo: das 46 registradas, 42 passam a sair. Das
+quatro restantes, uma está certa (o modelo dizendo "Recebi seu SIM" sobre uma confirmação que não
+valia), duas repetem "seu pedido cancelado" da fala do cliente sem ter consultado, e uma só é
+barrada fora do contexto real (falava de um encaminhamento que tinha acontecido). Regras continuam sendo regras: uma paráfrase nova pode
 escapar. A defesa que não depende de nada disso continua sendo a arquitetura: o modelo não tem
 como cancelar, e o sucesso só é anunciado por template a partir da API.
 
