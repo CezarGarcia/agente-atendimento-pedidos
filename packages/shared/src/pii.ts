@@ -41,9 +41,13 @@ const CPF_CANDIDATE = new RegExp(
   String.raw`(?<!\d)\d{3}${SEP}\d{3}${SEP}\d{3}${SEP}\d{2}(?!\d)`,
   'g',
 );
+/**
+ * Telefone não pode estar grudado em letras: "QB987654321BR" é código de rastreio (o número do
+ * meio parece um celular). Sem essa borda, o rastreio virava "QB[TELEFONE REMOVIDO]BR" (evals).
+ */
 const PHONE = new RegExp(
-  String.raw`(?<!\d)(?:\+?\s?55${SEP})?(?:\(?0?\d{2}\)?${SEP})?9?${SEP}\d{4}${SEP}\d{4}(?!\d)`,
-  'g',
+  String.raw`(?<![\p{L}\d])(?:\+?\s?55${SEP})?(?:\(?0?\d{2}\)?${SEP})?9?${SEP}\d{4}${SEP}\d{4}(?![\p{L}\d])`,
+  'gu',
 );
 
 const onlyDigits = (value: string): string => value.replace(/\D/g, '');

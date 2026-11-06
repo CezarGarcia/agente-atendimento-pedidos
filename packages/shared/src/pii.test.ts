@@ -73,6 +73,7 @@ describe('redactPii — formatos da revisão adversarial', () => {
 
   it.each([
     'QB123456785BR',
+    'o código de rastreio é QB987654321BR.',
     'R$ 3.475,00',
     '04/11/2026',
     'pedido 100101',
