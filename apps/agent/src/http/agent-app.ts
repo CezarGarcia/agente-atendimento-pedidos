@@ -52,7 +52,7 @@ function isValidSignature(
   return expected.length === received.length && timingSafeEqual(expected, received);
 }
 
-type RawBodyRequest = Request & { rawBody?: Buffer };
+type RawBodyRequest = Request & { rawBody?: Buffer; signatureValid?: boolean };
 
 const problem = (status: number, code: string, detail: string) => ({
   type: `/problems/${code.toLowerCase().replaceAll('_', '-')}`,
@@ -130,9 +130,37 @@ export function createAgentApp(deps: AgentAppDependencies): Express {
    */
   app.post(
     '/channels/mock-whatsapp/webhook',
-    rateLimit({ windowMs: 60_000, limit: 600, standardHeaders: 'draft-8', legacyHeaders: false }),
+    (req: RawBodyRequest, _res, next) => {
+      req.signatureValid = isValidSignature(
+        req.rawBody,
+        req.get(SIGNATURE_HEADER),
+        deps.webhookSecret,
+      );
+      next();
+    },
+    // Todo tráfego legítimo vem do mesmo IP (a plataforma): limitar por IP deixaria um cliente
+    // travar o canal de todos (achado da revisão adversarial). O limite por IP vale só para
+    // requisições sem assinatura válida; as assinadas são limitadas por remetente.
+    rateLimit({
+      windowMs: 60_000,
+      limit: 600,
+      skip: (req: RawBodyRequest) => req.signatureValid === true,
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+    }),
+    rateLimit({
+      windowMs: 60_000,
+      limit: 120,
+      skip: (req: RawBodyRequest) => req.signatureValid !== true,
+      keyGenerator: (req: RawBodyRequest) => {
+        const from: unknown = (req.body as { from?: unknown } | undefined)?.from;
+        return typeof from === 'string' ? `from:${from}` : 'from:desconhecido';
+      },
+      standardHeaders: 'draft-8',
+      legacyHeaders: false,
+    }),
     async (req: RawBodyRequest, res) => {
-      if (!isValidSignature(req.rawBody, req.get(SIGNATURE_HEADER), deps.webhookSecret)) {
+      if (!req.signatureValid) {
         deps.logger.warn(
           { event: 'channel.webhook.invalid_signature' },
           'webhook com assinatura inválida',

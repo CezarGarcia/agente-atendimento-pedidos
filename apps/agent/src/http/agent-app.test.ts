@@ -114,6 +114,19 @@ describe('webhook do canal de mensagens', () => {
     expect(second.body).toEqual(first.body);
     expect(model.requests).toHaveLength(1);
   });
+
+  it('[HT-06] um remetente inundando o webhook não bloqueia os outros (limite por remetente)', async () => {
+    const { app, model } = setup();
+    model.script(llm.reply('Olá, Ana!'), llm.reply('Olá, Bruno!'));
+    const flood = { messageId: 'wamid.flood', from: PHONES.ana, text: 'oi' };
+    const statuses: number[] = [];
+    for (let i = 0; i < 125; i += 1) statuses.push((await webhook(app, flood)).status);
+    expect(statuses.at(-1)).toBe(429);
+
+    const bruno = await webhook(app, { messageId: 'wamid.b1', from: PHONES.bruno, text: 'oi' });
+    expect(bruno.status).toBe(200);
+    expect(bruno.body.messages).toEqual([{ text: 'Olá, Bruno!' }]);
+  });
 });
 
 describe('API do simulador (modo demonstração)', () => {
