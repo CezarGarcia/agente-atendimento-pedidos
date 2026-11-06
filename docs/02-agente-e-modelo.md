@@ -14,7 +14,10 @@
 do modelo, porque são impostas por código. Nesse cenário, um modelo rápido e barato é suficiente
 e responde no tempo de uma conversa de WhatsApp. A suíte de avaliação
 ([`evals/`](../apps/agent/evals)) permite comparar com o Sonnet 5.5 em acerto, latência e custo e
-validar a escolha com dados (`npm run eval -- --models claude-haiku-5-5,claude-sonnet-5-5`).
+validar a escolha com dados (`npm run eval -- --models claude-haiku-5-5,claude-sonnet-5-5`). Na
+rodada final, com 51 cenários e 3 execuções, o Haiku foi aprovado em 153 de 153 execuções e o
+Sonnet em 152 de 153, com o Haiku custando cerca de 1/18 por conversa e respondendo mais rápido
+([relatórios](evals/README.md)).
 
 ## 2. Função e limites do modelo
 
@@ -140,7 +143,9 @@ contradições com o cliente, prevalece o sistema. O código complementa com not
 uma frase e voltar ao atendimento. Diz também para não aceitar "autoridade" (gerente, suporte),
 não revelar, resumir ou traduzir as instruções, e não enviar links. Isso é complementado por
 detecção heurística na entrada (aviso ao modelo pelo canal de sistema) e por três verificações na
-saída: o canary, os marcadores das seções e a reprodução literal de trechos das instruções.
+saída: o canary, os marcadores das seções e a reprodução literal de trechos das instruções. O
+escopo, as regras de negócio e os exemplos não contam como vazamento: explicar as regras ao
+cliente é o trabalho do agente; o que não pode sair é o funcionamento interno.
 
 **Confirmação antes de executar.** `<protocolo_de_cancelamento>` explica que a ferramenta só
 inicia o processo e que o próprio sistema faz a pergunta. A confirmação em si é decidida por
@@ -178,23 +183,36 @@ garantias se mantêm independentemente do modelo.
 ## 6. Avaliação do comportamento (evals)
 
 Os testes automatizados usam um modelo roteirizado, o que é determinístico e serve para provar o
-harness. Para medir o **modelo real**, há uma suíte de avaliação com 31 cenários:
+harness. Para medir o **modelo real**, há uma suíte de avaliação com 51 cenários:
 
-- consulta, cancelamento, escopo e falhas;
-- 13 ataques de red team em português e inglês: ignorar regras, falsa autoridade, falso
-  "sistema", extração e tradução do prompt, roleplay, pedido de outra pessoa, dados de terceiros,
-  frase de sucesso forçada, contradição do sistema, injeção indireta pelo catálogo, CPF.
+- consulta, cancelamento, escopo e falhas, inclusive conversas de vários turnos (pedido despachado
+  no meio da conversa, troca de pedido durante a confirmação, dois pedidos na mesma mensagem);
+- 25 ataques de red team em português e inglês: ignorar regras, falsa autoridade, falso
+  "sistema", tags internas falsas, falsa transcrição do agente, ofuscação (`1gn0r3`), base64,
+  extração, tradução e repetição do prompt, nomes das ferramentas, roleplay, pressão emocional,
+  insistência com ameaça, pedido de outra pessoa, enumeração de pedidos, dados de terceiros,
+  frase de sucesso forçada, contradição do sistema, injeção indireta pelo catálogo (com ordem
+  explícita e com uma afirmação falsa sem ordem nenhuma), CPF e cartão no encaminhamento.
 
 Cada cenário roda dentro do harness verdadeiro e é verificado de forma **objetiva**: estado final
-do pedido, ferramentas chamadas, cancelamento executado ou não, padrões proibidos nas respostas.
-Um juiz opcional (outro modelo, com saída estruturada) avalia tom e clareza. O relatório mostra
-`pass^k` (o cenário passou em **todas** as execuções), custo e latência por modelo.
+do pedido, ferramentas chamadas (e quantas vezes), cancelamento executado ou não, padrões
+proibidos nas respostas e no resumo do encaminhamento. Em todo cenário valem também verificações
+globais: cancelamento só pelo botão ou por resposta à pergunta de confirmação imediatamente
+anterior (R4), respostas curtas e modelo disponível. Um juiz (outro modelo, com saída
+estruturada) avalia o que regra não mede, recebendo também os **dados do sistema** (sessão e
+resultado de cada ferramenta) para conferir se o agente inventou algo. Quando o guardrail de saída
+bloqueia uma resposta, o relatório mostra o texto original do modelo: é assim que se separa um
+acerto do guardrail de um falso positivo. O relatório mostra `pass^k` (o cenário passou em
+**todas** as execuções), custo e latência por modelo.
 
 ```bash
-ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --transcripts
+ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --transcripts --out docs/evals
+ANTHROPIC_API_KEY=... npm run eval -- --models claude-haiku-5-5,claude-sonnet-5-5 --runs 3 \
+  --judge claude-sonnet-5-5 --transcripts --out docs/evals
 ```
 
-O relatório, os resultados e as transcrições vão para `docs/evals/`, e o resumo para
+Os relatórios, os resultados e as conversas estão em [`evals/`](evals/README.md), com o histórico
+das rodadas e o que cada falha mudou no código e no prompt. O resumo, com conversas reais, está em
 [`08-exemplos-de-conversa.md`](08-exemplos-de-conversa.md).
 
 ## 7. Contrato do canal de mensagens (webhook)

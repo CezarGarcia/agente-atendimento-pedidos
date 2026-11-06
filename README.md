@@ -79,15 +79,15 @@ npm run e2e:up && npm run test:e2e && npm run e2e:down
 ```
 
 ```bash
-ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --transcripts
+ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --transcripts --out docs/evals
 ```
 
 | Camada                        | Quantidade  | O que prova                                                                                                                        |
 | ----------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Unitários e integração        | 303         | Regras, API com PostgreSQL real (inclusive concorrência), guardrails, confirmação, resiliência                                     |
-| Agente com modelo roteirizado | 46 dos 303  | O harness impõe as regras **mesmo com o modelo errando de propósito**; cada requisição é validada contra as regras da Messages API |
+| Unitários e integração        | 329         | Regras, API com PostgreSQL real (inclusive concorrência), guardrails, confirmação, resiliência                                     |
+| Agente com modelo roteirizado | 49 dos 329  | O harness impõe as regras **mesmo com o modelo errando de propósito**; cada requisição é validada contra as regras da Messages API |
 | Ponta a ponta                 | 21          | Stack completa por webhook assinado e navegador, conferindo o estado na API principal                                              |
-| Avaliação com o modelo real   | 31 cenários | Comportamento do modelo dentro do harness, com repetição (`pass^k`) e red team                                                     |
+| Avaliação com o modelo real   | 51 cenários | Comportamento do modelo dentro do harness, com repetição (`pass^k`) e red team                                                     |
 
 Cada caso documentado em [`docs/06-casos-de-teste.md`](docs/06-casos-de-teste.md) tem o ID no nome
 do teste que o verifica: `npx vitest run -t "AG-17"` roda só aquele caso.
@@ -106,6 +106,7 @@ O CI (GitHub Actions) roda qualidade e testes, build das imagens e o E2E com a s
 | Casos de teste documentados e rastreabilidade              | [`docs/06-casos-de-teste.md`](docs/06-casos-de-teste.md)                                                                                                      |
 | Logs estruturados (formato e exemplos reais)               | [`docs/07-observabilidade-e-logs.md`](docs/07-observabilidade-e-logs.md)                                                                                      |
 | Exemplos de conversa                                       | [`docs/08-exemplos-de-conversa.md`](docs/08-exemplos-de-conversa.md)                                                                                          |
+| Avaliações com o modelo real (relatórios e histórico)      | [`docs/evals/README.md`](docs/evals/README.md)                                                                                                                |
 | Decisões e limitações                                      | [`docs/09-decisoes-e-limitacoes.md`](docs/09-decisoes-e-limitacoes.md)                                                                                        |
 
 ## Arquitetura
