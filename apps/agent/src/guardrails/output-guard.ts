@@ -225,9 +225,9 @@ const ACTION_SPANS: readonly SpanClaim[] = [
  * ("não FOI cancelado", "nenhum DOS SEUS PEDIDOS FOI cancelado"). "Nem esquenta que tá cancelado"
  * e "Não demorou nada e já foi cancelado" afirmam.
  */
-const FILLER = String.raw`(?:ainda|mais|te|lhe|me|foi|foram|esta|estao|ficou|ficaram|tinha|tem|sido|ser|estar|pode|podem|posso|consigo|o|a|os|as|do|da|dos|das|de|seu|sua|seus|suas|meu|minha|pedido|pedidos|ele|ela|eles|elas|isso|consta|constam|aparece|como|\d{6}|been|was|were|is|are|has|have|the|order|it)`;
+const FILLER = String.raw`(?:ainda|mais|te|lhe|me|dele|dela|deles|delas|registra|mostra|exibe|traz|foi|foram|esta|estao|ficou|ficaram|tinha|tem|sido|ser|estar|pode|podem|posso|consigo|o|a|os|as|do|da|dos|das|de|seu|sua|seus|suas|meu|minha|pedido|pedidos|ele|ela|eles|elas|isso|consta|constam|aparece|como|\d{6}|been|was|were|is|are|has|have|the|order|it)`;
 const NEGATION_BEFORE = new RegExp(
-  String.raw`\b(nao|nem|nunca|jamais|nada|nenhum|nenhuma|not|never|nothing)\s+(?:${FILLER}\s+){0,4}$|\bnao\s+(e|sao)\s+(?:${FILLER}\s+){0,2}$`,
+  String.raw`\b(nao|nem|nunca|jamais|nada|nenhum|nenhuma|not|never|nothing)\s+(?:${FILLER}\s+){0,5}$|\bnao\s+(e|sao)\s+(?:${FILLER}\s+){0,2}$`,
 );
 /** Antes do substantivo de um par, só a negação do sujeito vale: "nenhum cancelamento foi feito". */
 const NEGATED_SUBJECT_BEFORE = new RegExp(
@@ -288,7 +288,7 @@ const DURATION_BEFORE =
 const SUBJUNCTIVE_BEFORE =
   /\b((tenha|tenham|tiver|tiverem|tivesse|tivessem) sido|esteja|estejam|estivesse|estivessem)\s+$/;
 const DOUBT_FRAME = new RegExp(
-  String.raw`\b((nao|nem)\s+(?:(?:tenho|temos|ha|existe|consta|recebi|recebemos|vejo|encontrei|encontro|possuo|nenhuma|nenhum|qualquer)\s+){0,3}(informacao|registro|confirmacao|indicacao|sinal|evidencia|prova)\s+(?:de\s+)?que|(nenhum|nenhuma|sem)\s+(informacao|registro|confirmacao|indicacao|sinal|evidencia|prova)\s+(?:de\s+)?que|duvido que|nao consta que|nao parece que)(\s+${TOKEN}){0,7}\s*$`,
+  String.raw`\b((nao|nem)\s+(?:(?:tenho|temos|ha|existe|consta|recebi|recebemos|vejo|encontrei|encontro|possuo|nenhuma|nenhum|qualquer)\s+){0,3}(informacao|registro|confirmacao|indicacao|sinal|evidencia|prova)\s+(?:de\s+)?que|(nenhum|nenhuma|sem)\s+(informacao|registro|confirmacao|indicacao|sinal|evidencia|prova)\s+(?:de\s+)?que|duvido que|nao consta que|nao parece que|como se)(\s+${TOKEN}){0,7}\s*$`,
 );
 const INDEFINITE_BEFORE = /\b(um|uma|qualquer|algum|alguma|nenhum|nenhuma)\s+$/;
 /** "Ela não corresponde a um cancelamento realizado", "não houve cancelamento". */
@@ -355,9 +355,9 @@ const NEGATION_WORD = /\b(nao|nem|nunca|jamais|not|never|cannot|can't|cant|won't
  * …". "Repetir" e os verbos no passado ficam de fora: "não vou repetir "…" de novo" e "nunca
  * escrevi "…" tão rápido" afirmam.
  */
-const QUOTE_OBJECT = String.raw`(?:\s+(?:so|apenas|somente|em json|em ingles|em texto|com|o|a|essa|esta|tal|uma|nenhuma|sua|como|the|this|that|mensagem|frase|resposta|texto|palavra|expressao|status|message|phrase|reply)){0,4}\s*:?\s*$`;
+const QUOTE_OBJECT = String.raw`(?:\s+(?:so|apenas|somente|em json|em ingles|em texto|com|o|a|essa|esta|esse|este|tal|uma|um|nenhuma|sua|como|the|this|that|json|mensagem|frase|resposta|texto|palavra|expressao|status|message|phrase|reply)){0,4}\s*:?\s*$`;
 const QUOTE_REFUSED_BEFORE = new RegExp(
-  String.raw`\b(nao|nem|nunca|jamais)\s+(?:(?:posso|vou|consigo|devo|irei|podemos|vamos|ha como|tenho como|da para|da pra|e possivel)\s+)?(?:enviar|mandar|dizer|responder|escrever|usar|confirmar|afirmar|dar|informar|reproduzir|confirmo|afirmo|digo|envio|mando|escrevo|uso)\b${QUOTE_OBJECT}|\b(?:can't|cant|cannot|won't|wont|will not)\s+(?:send|say|write|confirm|use)\b${QUOTE_OBJECT}`,
+  String.raw`\b(nao|nem|nunca|jamais)\s+(?:(?:posso|vou|consigo|devo|irei|podemos|vamos|ha como|tenho como|da para|da pra|e possivel)\s+)?(?:enviar|mandar|dizer|responder|escrever|usar|confirmar|afirmar|dar|informar|reproduzir|gerar|montar|criar|produzir|confirmo|afirmo|digo|envio|mando|escrevo|uso)\b${QUOTE_OBJECT}|\b(?:can't|cant|cannot|won't|wont|will not)\s+(?:send|say|write|confirm|use)\b${QUOTE_OBJECT}`,
 );
 /** "Não vou mandar "…" de novo": a recusa é da repetição, não do conteúdo. */
 const QUOTE_REPEATED_AFTER =
@@ -499,7 +499,7 @@ function isQuotedMention(text: string, claim: Claim): boolean {
       QUOTE_REFERENCE.test(edgeWords(before, 8, 'end')) ||
       QUOTE_REFERENCE.test(edgeWords(after.text, 4, 'start'));
     return (
-      (before.match(NEGATION_WORD)?.length ?? 0) === 0 &&
+      negations === 0 &&
       named &&
       !after.question &&
       !CONTRAST.test(after.text) &&
@@ -530,7 +530,8 @@ function doubleNegated(text: string, claim: Claim): boolean {
   const clause =
     text
       .slice(start, claim.tailIndex)
-      .split(/[,;:]|\bmas\b/)
+      // "e" separa orações, mas "não e" é "não é" depois da normalização.
+      .split(/[,;:]|\b(?:mas|porque|pois)\b|(?<!\bnao )\be\b/)
       .at(-1) ?? '';
   return (clause.match(/\b(nao|nem|nunca|jamais)\b/g)?.length ?? 0) >= 2;
 }
