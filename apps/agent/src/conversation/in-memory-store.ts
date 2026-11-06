@@ -76,6 +76,14 @@ export class InMemoryConversationStore implements ConversationStore {
   }
 
   savePendingAction(action: PendingAction): Promise<void> {
+    // Mesma garantia do índice único do Postgres: uma ação aberta por conversa.
+    const open = [...this.pendingActions.values()].some(
+      (other) =>
+        other.conversationId === action.conversationId &&
+        OPEN_STATUSES.has(other.status) &&
+        OPEN_STATUSES.has(action.status),
+    );
+    if (open) return Promise.reject(new Error('já existe uma ação aberta nesta conversa'));
     this.pendingActions.set(action.id, action);
     return Promise.resolve();
   }
@@ -125,6 +133,11 @@ export class InMemoryConversationStore implements ConversationStore {
     }
     this.processed.set(messageKey, null);
     return Promise.resolve({ status: 'claimed' });
+  }
+
+  releaseMessage(messageKey: string): Promise<void> {
+    if (this.processed.get(messageKey) === null) this.processed.delete(messageKey);
+    return Promise.resolve();
   }
 
   completeTurn(turn: CompletedTurn): Promise<void> {

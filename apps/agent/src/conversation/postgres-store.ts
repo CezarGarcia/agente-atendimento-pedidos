@@ -267,6 +267,14 @@ export class PostgresConversationStore implements ConversationStore {
     return { status: 'duplicate', reply: existing?.reply ?? null };
   }
 
+  async releaseMessage(messageKey: string): Promise<void> {
+    await this.db
+      .deleteFrom('processed_messages')
+      .where('message_id', '=', messageKey)
+      .where('reply', 'is', null)
+      .execute();
+  }
+
   async completeTurn(turn: CompletedTurn): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
       if (turn.messages.length > 0) {

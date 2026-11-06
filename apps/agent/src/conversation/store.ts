@@ -68,6 +68,8 @@ export interface ConversationStore {
    * recebida de novo recebe a mesma resposta (ou nada, se ainda estiver em processamento).
    */
   claimMessage(messageKey: string): Promise<MessageClaim>;
+  /** Desfaz a reserva de uma mensagem sem resposta (o turno falhou): a reentrega será processada. */
+  releaseMessage(messageKey: string): Promise<void>;
   /** Grava o turno de forma atômica: histórico, atividade, trace e resposta da mensagem. */
   completeTurn(turn: CompletedTurn): Promise<void>;
 

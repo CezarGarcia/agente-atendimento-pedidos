@@ -94,6 +94,25 @@ export const templates = {
         'para consultá-lo daqui a pouco ou falar com um atendente.',
     ),
 
+  /** "Agora não" após resultado incerto: o sistema reconsultou a API (revisão adversarial). */
+  unknownOutcomeCancelled: (orderId: string) =>
+    text(
+      `Tudo bem. Consultei de novo: o pedido *${orderId}* está cancelado. Se houve pagamento, a ` +
+        'devolução do valor segue a política da loja. Posso ajudar em algo mais?',
+    ),
+
+  unknownOutcomeNotCancelled: (orderId: string, status: string) =>
+    text(
+      `Tudo bem. Consultei de novo: o pedido *${orderId}* não foi cancelado e segue ${status}. ` +
+        'Se ainda quiser cancelar, é só me pedir.',
+    ),
+
+  conversationTooLong: () =>
+    text(
+      'Nossa conversa ficou bem longa, então vou começar um atendimento novo para continuar com ' +
+        'segurança. Pode me contar de novo como posso ajudar?',
+    ),
+
   cancellationDeclined: (orderId: string) =>
     text(`Combinado, o pedido *${orderId}* continua ativo. Posso ajudar em algo mais?`),
 

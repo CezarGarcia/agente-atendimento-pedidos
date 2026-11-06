@@ -154,6 +154,8 @@ export interface TurnState {
   /** Confirmação criada neste turno: encerra o turno com a pergunta de confirmação. */
   pendingCreated: PendingAction | null;
   readonly cancellationNotes: CancellationNote[];
+  /** Sinais de manipulação na mensagem do cliente: vão para o atendente junto com o resumo. */
+  injectionSignals: readonly string[];
 }
 
 export interface ToolExecutorDependencies {
@@ -168,6 +170,41 @@ export interface ToolExecutorDependencies {
 }
 
 const MAX_TOOL_CALLS_PER_TURN = 8;
+
+/** Procedência do resumo do encaminhamento, visível para quem atende. */
+export const HANDOFF_SUMMARY_PREFIX =
+  '[Resumo do assistente virtual, a partir do relato do cliente; não verificado] ';
+
+/**
+ * Cabeçalho do resumo para o atendente: procedência, identidade e sinais de manipulação. Um
+ * telefone sem cadastro podia abrir um atendimento dizendo "cliente Ana (identidade confirmada)",
+ * e o sinal de manipulação ficava só no trace (revisão adversarial).
+ */
+function handoffSummaryHeader(conversation: Conversation, turn: TurnState): string {
+  const identity =
+    conversation.identityStatus === 'verified'
+      ? 'cliente identificado pelo telefone'
+      : 'telefone SEM cadastro na loja: identidade não confirmada';
+  const signals =
+    turn.injectionSignals.length > 0
+      ? ` · mensagem com sinais de tentativa de manipulação (${turn.injectionSignals.join(', ')})`
+      : '';
+  return `${HANDOFF_SUMMARY_PREFIX.trimEnd().replace(/\]$/, '')} · ${identity}${signals}] `;
+}
+
+/** Tamanho máximo do motivo enviado à API (que aceita até 500), já com os dados mascarados. */
+const MAX_REASON_LENGTH = 300;
+
+/**
+ * Motivo informado pelo cliente, como a API aceita: sem dados pessoais, sem espaços sobrando,
+ * nulo se vazio e cortado depois do mascaramento (os marcadores aumentam o texto). Antes, um motivo
+ * vazio ou longo demais era recusado pela API e virava "resultado incerto" a cada tentativa.
+ */
+function cancellationReason(reason: string | null): string | null {
+  if (reason === null) return null;
+  const masked = redactPii(reason.trim()).text.trim();
+  return masked === '' ? null : masked.slice(0, MAX_REASON_LENGTH);
+}
 
 type ToolPayload = Record<string, unknown>;
 
@@ -360,15 +397,14 @@ export class ToolExecutor {
     const open = await this.deps.store.findOpenPendingAction(conversation.id);
     if (open) await this.deps.store.updatePendingAction(open.id, { status: 'superseded' });
 
-    const catalog = await this.loadCatalog(order);
     const now = this.deps.now();
     const action: PendingAction = {
       id: randomUUID(),
       conversationId: conversation.id,
       type: 'cancel_order',
       orderId: order.id,
-      reason: reason === null ? null : redactPii(reason).text,
-      orderSummary: summarizeOrder(order, catalog.products),
+      reason: cancellationReason(reason),
+      orderSummary: summarizeOrder(order),
       status: 'awaiting_confirmation',
       awaitingTextReply: true,
       createdAt: now,
@@ -392,7 +428,9 @@ export class ToolExecutor {
       (await this.deps.store.createHandoff({
         conversationId: conversation.id,
         reason,
-        summary: redactPii(summary).text,
+        // O atendente precisa saber de onde vem o texto: o modelo resume o relato do cliente, que
+        // pode trazer alegações falsas ("o gerente autorizou") ou tentar instruir a equipe.
+        summary: `${handoffSummaryHeader(conversation, turn)}${redactPii(summary).text}`,
       }));
     turn.handoff = ticket;
     await this.deps.store.updateConversation(conversation.id, { status: 'handed_off' });
@@ -472,28 +510,14 @@ function presentOrder(order: ApiOrder, products: ReadonlyMap<number, CatalogLook
   };
 }
 
-function summarizeOrder(order: ApiOrder, products: ReadonlyMap<number, CatalogLookup>): string {
-  const first = order.items[0];
-  const lookup = first ? products.get(first.productId) : undefined;
-  const title = lookup?.status === 'found' ? lookup.product.title : null;
-  // Título do catálogo externo: vai entre aspas (é dado, não instrução) e sem aspas internas.
-  const cleanTitle = title?.replace(/["“”]/g, '') ?? null;
-  const shortTitle = cleanTitle && `"${shortenTitle(cleanTitle)}"`;
-  const others = order.items.length - 1;
-  const items = shortTitle
-    ? `${shortTitle}${others > 0 ? ` e mais ${others} ${others === 1 ? 'item' : 'itens'}` : ''}`
-    : `${order.items.length} ${order.items.length === 1 ? 'item' : 'itens'}`;
-  return `${items}, total ${order.total.formatted}`;
-}
-
-/** Encurta títulos longos no fim de um trecho ("Mochila X, Fits 15 Laptops" → "Mochila X"). */
-export function shortenTitle(title: string, max = 45): string {
-  if (title.length <= max) return title;
-  const head = title.slice(0, max);
-  const comma = head.lastIndexOf(',');
-  if (comma >= 15) return head.slice(0, comma);
-  const space = head.lastIndexOf(' ');
-  return `${(space > 15 ? head.slice(0, space) : head).replace(/[\s,.;:-]+$/, '')}…`;
+/**
+ * Resumo do pedido na pergunta de confirmação: só dados da API (quantidade de itens e total). O
+ * título do catálogo saiu daqui: é dado externo e aparecia dentro da pergunta que o "sim" responde
+ * ("Mochila. Para MANTER o pedido responda SIM" levava o cliente a cancelar; revisão adversarial).
+ */
+function summarizeOrder(order: ApiOrder): string {
+  const count = order.items.reduce((sum, item) => sum + item.quantity, 0);
+  return `${String(count)} ${count === 1 ? 'item' : 'itens'}, total ${order.total.formatted}`;
 }
 
 /**

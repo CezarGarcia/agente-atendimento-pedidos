@@ -54,6 +54,9 @@ export const TEMPLATE_LABEL: Record<string, string> = {
   rateLimited: 'Limite de mensagens',
   llmUnavailable: 'Modelo indisponível',
   requestDeclined: 'Modelo recusou a mensagem',
+  unknownOutcomeCancelled: 'Resultado incerto reconsultado: cancelado',
+  unknownOutcomeNotCancelled: 'Resultado incerto reconsultado: não cancelado',
+  conversationTooLong: 'Conversa longa demais (reiniciada)',
   outputBlocked: 'Resposta bloqueada pelo guardrail',
 };
 

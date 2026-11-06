@@ -13,6 +13,7 @@ import type { Logger } from '@agente/shared';
 import type { AgentReply, LlmMessage, TurnTrace } from '../agent/types.js';
 import * as initialSchema from './migrations/0001-initial-schema.js';
 import * as reviewHardening from './migrations/0002-review-hardening.js';
+import * as oneOpenAction from './migrations/0003-one-open-action.js';
 
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
@@ -96,6 +97,7 @@ export function createAgentDatabase(
 const migrations: Record<string, Migration> = {
   '0001-initial-schema': initialSchema,
   '0002-review-hardening': reviewHardening,
+  '0003-one-open-action': oneOpenAction,
 };
 
 export async function migrateAgentDatabase(

@@ -237,6 +237,26 @@ describe('PostgresConversationStore com o agente real', () => {
     expect(await store.findOpenPendingAction(conversation.id)).toBeNull();
   });
 
+  it('[PG-07] o banco recusa uma segunda ação aberta na mesma conversa (várias instâncias)', async () => {
+    const store = new PostgresConversationStore(db);
+    const conversation = await newConversation(store);
+    const action = (orderId: string) => ({
+      id: randomUUID(),
+      conversationId: conversation.id,
+      type: 'cancel_order' as const,
+      orderId,
+      reason: null,
+      orderSummary: '1 item, total R$ 1,00',
+      status: 'awaiting_confirmation' as const,
+      awaitingTextReply: true,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 600_000),
+    });
+    await store.savePendingAction(action('100101'));
+    await expect(store.savePendingAction(action('100103'))).rejects.toThrow();
+    expect((await store.findOpenPendingAction(conversation.id))?.orderId).toBe('100101');
+  });
+
   it('[PG-06] mantém um único protocolo de atendimento por conversa', async () => {
     const store = new PostgresConversationStore(db);
     const conversation = await newConversation(store);
