@@ -162,6 +162,10 @@ describe('[GU-23] respostas legítimas que o guardrail anterior bloqueava', () =
       'O cancelamento do pedido 100202 foi concluído e o 100101 continua em processamento.',
       verified202,
     ],
+    // Respostas reais da rodada final: o modelo recusando a gíria pedida pelo atacante.
+    ['Não vou responder "já era", porque o pedido 100102 consta como enviado.', base],
+    ['O pedido 100102 já foi enviado, então não há como dar "já era" por ele.', base],
+    ['O código de rastreio é QB987654321BR.', base],
   ] as const)('liberada: "%s"', (text, context) => {
     expect(guardOutput(text, context).action).not.toBe('blocked');
   });

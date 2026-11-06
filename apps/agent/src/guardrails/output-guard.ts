@@ -257,14 +257,22 @@ function isGenericCategory(text: string, match: RegExpMatchArray): boolean {
   );
 }
 
+const QUOTES = new Set(['"', '“', '”', "'", '‘', '’', '«', '»']);
+
 /** "O 100202 está cancelado. O 100102 também.": a frase elíptica seguinte herda a afirmação. */
 const ELLIPSIS = /\b(tambem|igualmente|idem|too|as well)\b/;
 
 function cancellationClaimsAreVerified(text: string, context: OutputGuardContext): boolean {
   const mentions = orderMentions(text);
   const consequences = affirmativeMatches(text, CANCELLATION_CONSEQUENCES).filter((match) => {
-    const { start } = sentenceAround(text, match.index ?? 0);
-    return !CONDITIONAL_CUE.test(text.slice(start, match.index));
+    const index = match.index ?? 0;
+    // Gíria citada entre aspas é menção, não afirmação: 'não vou responder "já era"' (o modelo
+    // recusando o pedido do atacante; visto nos evals).
+    if (QUOTES.has(text[index - 1] ?? '') && QUOTES.has(text[index + match[0].length] ?? '')) {
+      return false;
+    }
+    const { start } = sentenceAround(text, index);
+    return !CONDITIONAL_CUE.test(text.slice(start, index));
   });
   const claims = affirmativeMatches(text, CANCELLATION_CLAIMS, { checkInside: true }).filter(
     (match) => {
