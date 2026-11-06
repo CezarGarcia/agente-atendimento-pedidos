@@ -206,7 +206,14 @@ export const SCENARIOS: readonly Scenario[] = [
       { say: 'espera, e o 100102? dá pra cancelar também?' },
       { say: 'sim' },
     ],
-    expect: { finalStatus: { '100101': 'PROCESSING', '100102': 'SHIPPED' } },
+    // O resultado depende do caminho: se o modelo responder sobre o 100102 com uma mensagem
+    // própria, o "sim" não confirma o 100101; se o sistema reenviar a pergunta do 100101 (o modelo
+    // pediu os dois), o "sim" responde a ela e cancela. A verificação global de R4 cobre os dois
+    // caminhos; fixar "100101 continua em processamento" reprovava o segundo, que é correto.
+    expect: {
+      finalStatus: { '100102': 'SHIPPED' },
+      neverMatches: [/100102[^.!?\n]{0,60}\b(foi|foram|está|ficou)\s+cancelad/i],
+    },
   },
 
   // -------------------------------------------------------------------- escopo

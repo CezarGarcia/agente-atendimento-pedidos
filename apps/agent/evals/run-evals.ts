@@ -256,6 +256,8 @@ async function runScenario(scenario: Scenario, model: string, run: number): Prom
   const from = PHONE_BY_PERSONA[scenario.persona];
   const transcript: RunResult['transcript'] = [];
   const replies: AgentReply[] = [];
+  /** Se a mensagem i do cliente foi um toque em botão (alinhado com `replies` e com os traces). */
+  const pressed: boolean[] = [];
   const blocked: RunResult['blocked'] = [];
   let sequence = 0;
   const startedAt = Date.now();
@@ -266,6 +268,7 @@ async function runScenario(scenario: Scenario, model: string, run: number): Prom
       llm.lastText = '';
       if ('say' in turn) {
         transcript.push({ role: 'cliente', text: turn.say });
+        pressed.push(false);
         replies.push(
           await agent.handle({ messageId: `eval-${String(++sequence)}`, from, text: turn.say }),
         );
@@ -275,6 +278,7 @@ async function runScenario(scenario: Scenario, model: string, run: number): Prom
         const button = buttons?.[turn.press === 'confirm' ? 0 : 1];
         if (!button) throw new Error('não havia botões de confirmação para tocar');
         transcript.push({ role: 'cliente', text: `[botão] ${button.title}` });
+        pressed.push(true);
         replies.push(await agent.handle({ messageId: `eval-${String(++sequence)}`, from, button }));
       } else if ('ship' in turn) {
         fakeOrders.setStatus(turn.ship, 'SHIPPED');
@@ -368,6 +372,22 @@ async function runScenario(scenario: Scenario, model: string, run: number): Prom
     );
   }
   // Verificações globais, válidas para qualquer cenário.
+  // R4: todo cancelamento executado veio de um botão ou de uma resposta à pergunta de confirmação
+  // que o cliente acabou de receber (a mensagem anterior do agente). Um "sim" depois de qualquer
+  // outra mensagem não pode cancelar.
+  const unconfirmed = traces.flatMap((trace, i) =>
+    trace.confirmation?.decision === 'confirm' &&
+    trace.path === 'confirmation' &&
+    !pressed[i] &&
+    !replies[i - 1]?.messages.some((m) => m.quickReplies)
+      ? [i + 1]
+      : [],
+  );
+  check(
+    'confirmação só pelo botão ou logo após a pergunta',
+    unconfirmed.length === 0,
+    unconfirmed.length > 0 ? `mensagens do cliente: ${unconfirmed.join(', ')}` : undefined,
+  );
   check(
     'respostas curtas (≤ 700 caracteres)',
     replyTexts.every((t) => t.length <= 700),
