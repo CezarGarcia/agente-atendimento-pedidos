@@ -23,12 +23,28 @@ const PLACEHOLDER: Record<PiiKind, string> = {
   phone: '[TELEFONE REMOVIDO]',
 };
 
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
-const CARD_CANDIDATE = /\b\d(?:[ -]?\d){12,18}\b/g;
-const CNPJ = /\b\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}\b|\b\d{14}\b/g;
+/*
+ * Os padrões aceitam os separadores que as pessoas usam (ponto, hífen, espaço, barra, sublinhado,
+ * até três seguidos) e conferem dígitos verificadores onde existem (CPF, cartão). A revisão
+ * adversarial achou "529 982 247 25", "4111.1111.1111.1111", "+5511987654321", "(011) 98765-4321",
+ * e-mail com espaço em volta do @ e com acento: todos passavam.
+ */
+const SEP = String.raw`[\s.\-/_]{0,3}`;
+const EMAIL = /[\p{L}\p{N}._%+-]+\s?@\s?[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu;
+const CARD_CANDIDATE = new RegExp(String.raw`(?<!\d)\d(?:${SEP}\d){12,18}(?!\d)`, 'g');
+const CNPJ = new RegExp(
+  String.raw`(?<!\d)\d{2}${SEP}\d{3}${SEP}\d{3}${SEP}\d{4}${SEP}\d{2}(?!\d)`,
+  'g',
+);
 const CPF_FORMATTED = /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g;
-const CPF_DIGITS = /\b\d{11}\b/g;
-const PHONE = /(?:\+?55[\s-]?)?(?:\(\d{2}\)|\b\d{2})[\s-]?9?\d{4}[\s-]?\d{4}\b/g;
+const CPF_CANDIDATE = new RegExp(
+  String.raw`(?<!\d)\d{3}${SEP}\d{3}${SEP}\d{3}${SEP}\d{2}(?!\d)`,
+  'g',
+);
+const PHONE = new RegExp(
+  String.raw`(?<!\d)(?:\+?\s?55${SEP})?(?:\(?0?\d{2}\)?${SEP})?9?${SEP}\d{4}${SEP}\d{4}(?!\d)`,
+  'g',
+);
 
 const onlyDigits = (value: string): string => value.replace(/\D/g, '');
 
@@ -70,7 +86,11 @@ export function redactPii(input: string): PiiRedactionResult {
     return PLACEHOLDER[kind];
   };
 
-  let text = input.replace(EMAIL, replace('email'));
+  // Largura total e invisíveis viram o equivalente simples antes dos padrões ("５２９…").
+  let text = input
+    .normalize('NFKC')
+    .replace(/[\u{200B}-\u{200F}\u{2060}-\u{2064}\u{FEFF}\u{00AD}]/gu, '')
+    .replace(EMAIL, replace('email'));
   text = text.replace(CARD_CANDIDATE, (match) => {
     if (!isValidLuhn(onlyDigits(match))) return match;
     detected.add('card');
@@ -78,7 +98,7 @@ export function redactPii(input: string): PiiRedactionResult {
   });
   text = text.replace(CNPJ, replace('cnpj'));
   text = text.replace(CPF_FORMATTED, replace('cpf'));
-  text = text.replace(CPF_DIGITS, (match) => {
+  text = text.replace(CPF_CANDIDATE, (match) => {
     if (!isValidCpf(match)) return match;
     detected.add('cpf');
     return PLACEHOLDER.cpf;

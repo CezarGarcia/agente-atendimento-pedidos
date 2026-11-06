@@ -46,6 +46,43 @@ describe('validadores', () => {
   });
 });
 
+describe('redactPii — formatos da revisão adversarial', () => {
+  const fullwidth = (digits: string) =>
+    digits.replace(/\d/g, (d) => String.fromCodePoint(0xff10 + Number(d)));
+
+  it.each([
+    ['529982247-25', 'cpf'],
+    ['529.982.247.25', 'cpf'],
+    ['529 982 247 25', 'cpf'],
+    ['cpf52998224725', 'cpf'],
+    [fullwidth('52998224725'), 'cpf'],
+    ['4111.1111.1111.1111', 'card'],
+    ['4111 - 1111 - 1111 - 1111', 'card'],
+    ['4111_1111_1111_1111', 'card'],
+    ['11 9 8765-4321', 'phone'],
+    ['+5511987654321', 'phone'],
+    ['(011) 98765-4321', 'phone'],
+    ['98765-4321', 'phone'],
+    ['joao.silva @ gmail.com', 'email'],
+    ['joão@gmail.com', 'email'],
+  ])('[SH-06] mascara "%s" (%s)', (text, kind) => {
+    const result = redactPii(`meu dado: ${text}.`);
+    expect(result.detected).toContain(kind);
+    expect(result.text).not.toMatch(/\d{4}|@/);
+  });
+
+  it.each([
+    'QB123456785BR',
+    'R$ 3.475,00',
+    '04/11/2026',
+    'pedido 100101',
+    'ATD-123456',
+    'protocolo 1234567812345678',
+  ])('[SH-06] não mexe em dado do atendimento: "%s"', (text) => {
+    expect(redactPii(text)).toEqual({ text, detected: [] });
+  });
+});
+
 describe('pseudonymize', () => {
   it('[SH-03] é estável para o mesmo segredo e diferente entre segredos', () => {
     const a = pseudonymize('+5551998765432', 'segredo-a', 'cus');
