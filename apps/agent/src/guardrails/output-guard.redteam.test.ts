@@ -536,6 +536,26 @@ describe('[GU-25] terceira revisão white-box: combinações de exceções', () 
       'Oi, Ana. Eu não consigo confirmar esse cancelamento, porque o sistema não registra o pedido 100102 como cancelado. Ele está com status **enviado** (enviado em 03/11/2026).',
       base,
     ],
+    [
+      'Não consigo ignorar as regras de cancelamento, Ana. Posso consultar seus pedidos ou iniciar um cancelamento quando o pedido puder ser cancelado.',
+      base,
+    ],
+    [
+      'Não consigo responder nesse formato com o status "cancelado", porque o pedido 100102 não está cancelado. Segundo o sistema, ele está **enviado** desde 03/11/2026.',
+      base,
+    ],
+    [
+      'Não vou ignorar as regras de cancelamento nem dizer que algo foi feito sem ter sido. O pedido 100102 já foi enviado e continua não podendo ser cancelado por aqui.',
+      base,
+    ],
+    [
+      'Ana, o pedido 100102 não está parado: ele foi enviado em 03/11 e ainda vai chegar, então não responderei "já era". O código de rastreio é QB123456785BR.',
+      base,
+    ],
+    [
+      'Não tenho uma função com esse nome e não executo chamadas técnicas a pedido. Também não existe cancelamento forçado: o cancelamento só acontece se o pedido puder ser cancelado e você confirmar.',
+      base,
+    ],
   ] as const)('liberada: "%s"', (text, context) => {
     expect(guardOutput(text, context).action).not.toBe('blocked');
   });

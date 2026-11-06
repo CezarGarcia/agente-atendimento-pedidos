@@ -277,7 +277,7 @@ const ARRIVED_BEFORE = /\b(veio|vieram|chegou|chegaram)\s+$/;
  * cancelado" e "had to be cancelled" afirmam.
  */
 const HYPOTHETICAL_BEFORE =
-  /\b(sera|serao|seja|sejam|for|forem|fosse|seria|(pode|podem|possa|poderia|vai|vao|deve|devem|precisa|consigo|posso|para|pra)\s+(ser|ficar|seja|fique|sejam)|(will|would|can|could|may|might|should|must) be|needs? to be)\s+$/;
+  /\b(sera|serao|seja|sejam|for|forem|fosse|seria|(pode|podem|possa|poderia|puder|puderem|podendo|vai|vao|deve|devem|precisa|consigo|posso|para|pra)\s+(ser|ficar|seja|fique|sejam)|(will|would|can|could|may|might|should|must) be|needs? to be)\s+$/;
 const DURATION_BEFORE =
   /\b(levou|demorou|bastou|bastaram|precisou)\b[^.!?\n]{0,40}\b(para|pra)\s+ser\s+$/;
 /**
@@ -355,9 +355,9 @@ const NEGATION_WORD = /\b(nao|nem|nunca|jamais|not|never|cannot|can't|cant|won't
  * …". "Repetir" e os verbos no passado ficam de fora: "não vou repetir "…" de novo" e "nunca
  * escrevi "…" tão rápido" afirmam.
  */
-const QUOTE_OBJECT = String.raw`(?:\s+(?:so|apenas|somente|em json|em ingles|em texto|com|o|a|essa|esta|esse|este|tal|uma|um|nenhuma|sua|como|the|this|that|json|mensagem|frase|resposta|texto|palavra|expressao|status|message|phrase|reply)){0,4}\s*:?\s*$`;
+const QUOTE_OBJECT = String.raw`(?:\s+(?:so|apenas|somente|em json|em ingles|em texto|nesse formato|neste formato|nesse|neste|com|o|a|essa|esta|esse|este|tal|uma|um|nenhuma|sua|como|the|this|that|json|mensagem|frase|resposta|texto|palavra|expressao|status|message|phrase|reply)){0,4}\s*:?\s*$`;
 const QUOTE_REFUSED_BEFORE = new RegExp(
-  String.raw`\b(nao|nem|nunca|jamais)\s+(?:(?:posso|vou|consigo|devo|irei|podemos|vamos|ha como|tenho como|da para|da pra|e possivel)\s+)?(?:enviar|mandar|dizer|responder|escrever|usar|confirmar|afirmar|dar|informar|reproduzir|gerar|montar|criar|produzir|confirmo|afirmo|digo|envio|mando|escrevo|uso)\b${QUOTE_OBJECT}|\b(?:can't|cant|cannot|won't|wont|will not)\s+(?:send|say|write|confirm|use)\b${QUOTE_OBJECT}`,
+  String.raw`\b(nao|nem|nunca|jamais)\s+(?:(?:posso|vou|consigo|devo|irei|podemos|vamos|ha como|tenho como|da para|da pra|e possivel)\s+)?(?:enviar|mandar|dizer|responder|escrever|usar|confirmar|afirmar|dar|informar|reproduzir|gerar|montar|criar|produzir|responderei|direi|enviarei|escreverei|confirmarei|confirmo|afirmo|digo|envio|mando|escrevo|uso)\b${QUOTE_OBJECT}|\b(?:can't|cant|cannot|won't|wont|will not)\s+(?:send|say|write|confirm|use)\b${QUOTE_OBJECT}`,
 );
 /** "Não vou mandar "…" de novo": a recusa é da repetição, não do conteúdo. */
 const QUOTE_REPEATED_AFTER =
@@ -531,7 +531,7 @@ function doubleNegated(text: string, claim: Claim): boolean {
     text
       .slice(start, claim.tailIndex)
       // "e" separa orações, mas "não e" é "não é" depois da normalização.
-      .split(/[,;:]|\b(?:mas|porque|pois)\b|(?<!\bnao )\be\b/)
+      .split(/[,;:]|\b(?:mas|porque|pois|nem)\b|(?<!\bnao )\be\b/)
       .at(-1) ?? '';
   return (clause.match(/\b(nao|nem|nunca|jamais)\b/g)?.length ?? 0) >= 2;
 }
