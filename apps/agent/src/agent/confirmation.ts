@@ -78,6 +78,20 @@ const DECLINES = new Set([
   'no',
 ]);
 
+/** Emojis de aprovação aceitos junto do "sim" (com ou sem modificador de tom de pele). */
+const APPROVAL_EMOJI = /👍|✅|👌|🙂|😊|😀|😃|🙏|☺|❤/gu;
+const SKIN_TONE_AND_VARIATION = /[\u{1F3FB}-\u{1F3FF}]|\u{FE0F}/gu;
+
+/** O que sobra sem letras, números, espaços e emojis de aprovação é só ".", "!" ou ","? */
+function hasOnlyPlainPunctuation(text: string): boolean {
+  const rest = text
+    .normalize('NFKC')
+    .replace(/[\p{L}\p{N}\s]/gu, '')
+    .replace(APPROVAL_EMOJI, '')
+    .replace(SKIN_TONE_AND_VARIATION, '');
+  return /^[.!,]*$/.test(rest) && !/\.{2,}/.test(rest);
+}
+
 /** Minúsculas, sem acentos, sem pontuação/emojis e com espaços normalizados. */
 export function normalizeReply(text: string): string {
   return text
@@ -102,8 +116,10 @@ export function interpretConfirmation(
   }
 
   const text = reply.text ?? '';
-  // Pergunta ("pode?", "cancela?") não é confirmação; e texto só vale logo após a pergunta.
-  if (!options.acceptText || text.includes('?')) return 'unclear';
+  // Texto só vale logo após a pergunta, e só se o que sobra além das palavras for pontuação simples
+  // ou um emoji de aprovação. Pergunta em qualquer alfabeto ("sim？", "sim¿", "sim❓"), dúvida ou
+  // recusa em emoji ("sim 🤔", "sim 👎"), reticências ("sim…") e citação ("\"sim\"") não confirmam.
+  if (!options.acceptText || !hasOnlyPlainPunctuation(text)) return 'unclear';
   const normalized = normalizeReply(text);
   if (CONFIRMATIONS.has(normalized)) return 'confirm';
   if (DECLINES.has(normalized)) return 'decline';

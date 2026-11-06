@@ -18,6 +18,37 @@ describe('interpretConfirmation (regra 4: confirmação explícita, sem IA)', ()
     expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('confirm');
   });
 
+  it.each([
+    // Revisão adversarial: "?" de outros alfabetos, emoji de dúvida ou recusa, hesitação e citação.
+    'sim？',
+    'sim﹖',
+    'sim¿',
+    '¿sim',
+    'sim‽',
+    'sim❓',
+    'pode❓',
+    'Sim ؟',
+    'sim 🤔',
+    'sim 🙄',
+    'sim 👎',
+    'sim ❌',
+    '❌ sim',
+    'Claro 😒',
+    'sim…',
+    'sim...',
+    '"sim"',
+    '> sim',
+  ])('[AG-16] não confirma com dúvida, recusa ou citação disfarçadas: "%s"', (text) => {
+    expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('unclear');
+  });
+
+  it.each(['sim ✅', 'Sim 👍🏽', 'sim, pode cancelar 🙏', 'Sim.'])(
+    '[AG-16] emoji de aprovação e pontuação simples continuam valendo: "%s"',
+    (text) => {
+      expect(interpretConfirmation(PENDING, { text }, ACCEPT_TEXT)).toBe('confirm');
+    },
+  );
+
   it.each(['Não', 'nao', 'não quero', 'deixa pra lá', 'Mudei de ideia', 'quero manter'])(
     '[AG-16] recusa com resposta inequívoca: "%s"',
     (text) => {
