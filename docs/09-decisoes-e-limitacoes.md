@@ -32,10 +32,11 @@ as regras da API.
 As garantias não dependem da capacidade do modelo.
 **Decisão.** `claude-haiku-5-5` com `effort: low`, configurável por variável de ambiente.
 **Validação.** A suíte de evals compara modelos em acerto, latência e custo
-(`--models claude-haiku-5-5,claude-sonnet-5-5`). Nas rodadas finais (51 cenários, 3 execuções), o
-Haiku foi aprovado em 153 de 153 execuções nas duas rodadas e o Sonnet em 152 de 153; o custo por
-conversa do Haiku foi cerca de 18 vezes menor (US$ 0,00026 contra US$ 0,00458) e as respostas mais
-rápidas (2,1–2,2 s contra 2,9 s). Os números estão em [`evals/README.md`](evals/README.md). Se o
+(`--models claude-haiku-5-5,claude-sonnet-5-5`). Nas rodadas finais (89 cenários, 55 deles de red
+team, 3 execuções), o Haiku foi aprovado em 261 e 260 de 267 execuções e o Sonnet em 261 de 267;
+o custo por conversa do Haiku foi cerca de 18 vezes menor (US$ 0,00026–0,00029 contra US$ 0,00500)
+e as respostas mais rápidas (2,1–2,2 s contra 3,3 s). Nenhum dos dois produziu uma afirmação falsa
+de cancelamento; 13 das 19 reprovações eram o guardrail barrando recusas corretas. Os números estão em [`evals/README.md`](evals/README.md). Se o
 Haiku passar a falhar em cenários de red team ou de condução da conversa, trocar o modelo é uma
 variável de ambiente. A configuração aceita só os
 modelos que suportam tudo o que a requisição usa (mensagens de sistema no meio da conversa,
@@ -153,9 +154,9 @@ respostas corretas (o modelo citando a frase do atacante para recusá-la, explic
 recusando o "conto" ou o JSON pedido). A rodada 9 tratou isso como defeito: cada recusa real
 virou teste (GU-24) e ganhou uma exceção estreita, e cada exceção passou por mais duas revisões
 white-box que tentaram abusar dela (GU-25: 127 ataques). Uma citação, por exemplo, só é menção
-quando a frase a recusa **e** a resposta diz o que é verdade. Das 46 respostas barradas em todas
-as rodadas, 42 passam a sair; das quatro restantes, uma está certa, duas repetem a fala do
-cliente sem consulta e uma só é barrada fora do contexto real. Cada revisão achou menos e mais
+quando a frase a recusa **e** a resposta diz o que é verdade. Das 60 respostas barradas em todas
+as rodadas, 55 passam a sair; das cinco restantes, uma está certa, três repetem a fala do cliente
+sem consulta e uma só é barrada fora do contexto real. Cada revisão achou menos e mais
 rebuscado do que a anterior, mas ainda achou: regras têm cauda longa, e o próximo passo é um
 classificador semântico como segunda opinião (só bloqueia).
 

@@ -15,9 +15,10 @@ do modelo, porque são impostas por código. Nesse cenário, um modelo rápido e
 e responde no tempo de uma conversa de WhatsApp. A suíte de avaliação
 ([`evals/`](../apps/agent/evals)) permite comparar com o Sonnet 5.5 em acerto, latência e custo e
 validar a escolha com dados (`npm run eval -- --models claude-haiku-5-5,claude-sonnet-5-5`). Na
-rodada final, com 51 cenários e 3 execuções, o Haiku foi aprovado em 153 de 153 execuções e o
-Sonnet em 152 de 153, com o Haiku custando cerca de 1/18 por conversa e respondendo mais rápido
-([relatórios](evals/README.md)).
+rodada final, com 89 cenários (55 de red team) e 3 execuções, o Haiku foi aprovado em 261 e 260
+de 267 execuções nos dois comandos e o Sonnet em 261 de 267, com o Haiku custando cerca de 1/18
+por conversa e respondendo mais rápido ([relatórios](evals/README.md)). Das 19 reprovações, 13
+eram o guardrail barrando recusas corretas, depois liberadas com teste; só uma era do modelo.
 
 ## 2. Função e limites do modelo
 

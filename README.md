@@ -84,8 +84,8 @@ ANTHROPIC_API_KEY=... npm run eval -- --runs 3 --judge claude-sonnet-5-5 --trans
 
 | Camada                        | Quantidade  | O que prova                                                                                                                        |
 | ----------------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Unitários e integração        | 687         | Regras, API com PostgreSQL real (inclusive concorrência), guardrails, confirmação, resiliência                                     |
-| Agente com modelo roteirizado | 63 dos 687  | O harness impõe as regras **mesmo com o modelo errando de propósito**; cada requisição é validada contra as regras da Messages API |
+| Unitários e integração        | 698         | Regras, API com PostgreSQL real (inclusive concorrência), guardrails, confirmação, resiliência                                     |
+| Agente com modelo roteirizado | 63 dos 698  | O harness impõe as regras **mesmo com o modelo errando de propósito**; cada requisição é validada contra as regras da Messages API |
 | Ponta a ponta                 | 21          | Stack completa por webhook assinado e navegador, conferindo o estado na API principal                                              |
 | Avaliação com o modelo real   | 89 cenários | Comportamento do modelo dentro do harness, com repetição (`pass^k`) e red team                                                     |
 
