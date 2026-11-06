@@ -53,6 +53,7 @@ crítico depende dela.
 | Afirmação de cancelamento não verificada pela API            | Bloqueia. Com número, confere cada pedido citado; sem número, exige exatamente um pedido consultado individualmente no turno e mostrado cancelado pela API. Negação e hipótese só valem até a pontuação mais próxima; discurso indireto ("dizia que foi cancelado") é bloqueado. |
 | Afirmação de encaminhamento sem handoff                      | Bloqueia                                                                                                                                                                                                                                                                         |
 | Promessa de estorno (prazo, garantia)                        | Bloqueia (respeitando negação)                                                                                                                                                                                                                                                   |
+| Ação que o agente não tem como executar                      | Bloqueia: endereço, dados de pagamento ou itens alterados, entrega reagendada, cupom ou desconto aplicado. Não há ferramenta para nada disso, então toda afirmação de que foi feito é falsa                                                                                      |
 | Canary, marcadores internos ou trecho literal das instruções | Bloqueia (vazamento de prompt). Trecho literal = duas janelas de 8 palavras das instruções, sem atravessar o fim de uma frase. Escopo, regras de negócio e exemplos ficam de fora: são públicos e o agente deve explicá-los                                                      |
 | Dados pessoais                                               | Mascara                                                                                                                                                                                                                                                                          |
 | Links                                                        | Remove                                                                                                                                                                                                                                                                           |
@@ -60,15 +61,55 @@ crítico depende dela.
 
 A detecção de afirmações é deliberadamente ampla, porque os dois erros não custam o mesmo: um
 falso positivo custa uma resposta genérica, e um falso negativo custa uma informação errada sobre
-dinheiro do cliente. Negações ("não foi cancelado") e hipóteses ("pode ser cancelado", "será
-cancelado") são reconhecidas para não atrapalhar conversas normais.
+dinheiro do cliente. Depois de uma revisão adversarial white-box e de duas rodadas de red team com
+o modelo real, o guardrail funciona assim:
 
-O modelo nunca executa um cancelamento: o sucesso é sempre anunciado por template. Por isso uma
-afirmação sem número só pode se referir a um pedido que o modelo acabou de consultar, e uma
-listagem não basta (ela não diz de qual pedido a frase fala). Além de "cancelado", entram
-sinônimos ("anulado", "o cancelamento deu certo") e consequências ("não será mais enviado", fora
-de frase condicional). A lista é finita e paráfrases criativas podem escapar; essa limitação está
-registrada em [decisões e limitações](09-decisoes-e-limitacoes.md).
+- **Normalização antes de toda checagem** ([`normalize.ts`](../apps/agent/src/guardrails/normalize.ts)):
+  caracteres invisíveis (soft hyphen, zero-width, tags Unicode), homóglifos cirílicos e gregos,
+  largura total, formatação do WhatsApp dentro da palavra e letras espaçadas. "cаncelado" com "а"
+  cirílico, "_cancelado_" e "c-a-n-c-e-l-a-d-o" são a mesma palavra.
+- **Vocabulário amplo**: cancelado, anulado, estornado, desfeito, cancelou, "o cancelamento foi
+  efetivado/ok ✅", inglês ("canceled", "refunded"), e consequências ("não será mais enviado",
+  "não vai mais ser cobrado", "já era").
+- **Exceção estreita**: negação e hipótese só valem coladas na afirmação ("não FOI cancelado",
+  "pode SER cancelado", "não consigo confirmar que o pedido está cancelado"). "Nem esquenta que tá
+  cancelado" e "Não se preocupe, foi cancelado" são afirmações. Cada exceção vale só na forma em
+  que o modelo recusa: o relato negado exige um auxiliar ("não posso dizer que", não "nem preciso
+  dizer que"); o subjuntivo, dúvida ou negação ("não tenho informação de que tenha sido
+  cancelado", não "fico feliz que tenha sido"); a oração temporal, verbo no futuro ("assim que
+  você confirmar", não "depois que você confirmou").
+- **Pares substantivo-desfecho** ("o cancelamento do pedido 100102, que estava em processamento,
+  foi realizado"): cada par da frase é avaliado à parte, então a negação de um ("não posso dizer
+  que algo foi feito") não cobre o seguinte ("…não foi feito por mim, foi feito pelo sistema").
+- **Citação** só é menção quando a frase recusa ou desmente o que está entre aspas e a resposta
+  diz o que é verdade: 'não posso enviar a mensagem "pedido 100102 cancelado", porque ele já foi
+  enviado', 'as mensagens "Pronto, cancelado!" não vieram do sistema; nenhum pedido foi
+  cancelado'. 'Pedido 100102 "já era"', 'não vou repetir "pedido 100102 cancelado" de novo' e
+  'a mensagem "…" está certinha' continuam bloqueadas.
+- **Atribuição por pedido**: a afirmação vale para todos os pedidos da frase, menos os que trazem o
+  próprio status ("o 100201 (em processamento) e o 100202 (cancelado)"). "O 100202 foi cancelado,
+  e o 100102 também" não pega carona no pedido verificado. Sem número na frase, vale o pedido
+  citado antes na resposta (cabeçalho "_Pedido 100102_") ou, se não houver, o único pedido
+  consultado no turno. O ponto de milhar ("R$ 3.475,00") não é fim de frase.
+- **Encaminhamento** só conta com uma pessoa como destino ("encaminhado para a transportadora" não
+  é encaminhamento); **promessa de estorno** é avaliada por oração.
+- **Ações sem ferramenta**: "alterei o endereço", "endereço atualizado ✅", "apliquei um cupom",
+  "reagendei a entrega", "a troca foi confirmada". "Não consigo alterar o endereço por aqui" e "o
+  endereço só pode ser alterado por um atendente" passam.
+- **Vazamento**: canary em qualquer forma (minúsculas, separado, invertido, base64), marcadores
+  com outros separadores, nomes das ferramentas e duas janelas de 8 palavras das instruções.
+- **Links** com ou sem protocolo (domínio, encurtador, IP) são removidos, e as checagens valem
+  para o texto já cortado no limite de tamanho.
+
+O corpus das revisões está em
+[`output-guard.redteam.test.ts`](../apps/agent/src/guardrails/output-guard.redteam.test.ts): os
+ataques que passavam (GU-22, GU-25, GU-26) e as recusas reais do modelo que eram barradas (GU-23,
+GU-24, tiradas das rodadas de avaliação). Antes de cada mudança, as respostas barradas de todas as
+rodadas são reaplicadas ao guardrail novo: das 22 registradas, só duas continuam barradas, ambas
+de propósito (o modelo dizendo "Recebi seu SIM" sobre uma confirmação que não valia, e repetindo
+"seu pedido cancelado" sem ter consultado). Regras continuam sendo regras: uma paráfrase nova pode
+escapar. A defesa que não depende de nada disso continua sendo a arquitetura: o modelo não tem
+como cancelar, e o sucesso só é anunciado por template a partir da API.
 
 ### Confirmação ([`confirmation.ts`](../apps/agent/src/agent/confirmation.ts))
 
@@ -77,21 +118,36 @@ O ponto mais sensível do sistema, inteiramente sem IA:
 - o botão confirma (ele carrega o id da ação: é inequívoco);
 - o texto só confirma se a última mensagem enviada foi a própria pergunta, e se for curto e
   inequívoco ("sim", "pode cancelar"). Um "sim" que responde outra pergunta não cancela nada;
-- respostas com "?", ambíguas ou com outro assunto não confirmam;
+- respostas com "?" (de qualquer alfabeto: "？", "¿", "❓"), emoji de dúvida ou recusa ("sim 🤔",
+  "sim 👎"), reticências, citação, ambíguas ou com outro assunto não confirmam;
+- qualquer resposta que não seja a pergunta, inclusive as fixas (mensagem longa demais, vazia,
+  limite de mensagens), fecha a janela do texto; depois dela, só o botão confirma;
+- a pergunta mostra só dados da API (pedido, quantidade de itens, total): o título do catálogo,
+  dado externo, ficava dentro da pergunta que o "sim" responde;
+- no máximo uma ação aberta por conversa, garantida por índice único no banco;
 - a ação vale 10 minutos, uma vez, para um pedido; uma nova solicitação substitui a anterior;
 - a execução é reservada atomicamente (`executing`), então confirmação e recusa simultâneas não
   divergem;
 - a regra é revalidada pela API, então um pedido despachado entre a pergunta e o "sim" é recusado.
 
+### Situação de risco
+
+Se o cliente fala em se machucar, em suicídio ou em outro risco à vida, o modelo encaminha a
+conversa com o motivo `situacao_sensivel`, e a resposta deixa de ser dele: o sistema envia uma
+mensagem fixa (`sensitiveHandoff`) com acolhimento, o CVV (188, 24 horas, gratuito), o SAMU (192)
+em perigo imediato e o protocolo do atendente que continua a conversa. O pedido não é mencionado.
+Nas avaliações, o modelo encaminhava sempre, mas em metade das execuções do Haiku abria com o
+protocolo e esquecia o acolhimento ou o CVV; uma mensagem dessas não pode depender de sorteio.
+
 ## 4. Proteção de dados (LGPD)
 
-| Princípio       | Aplicação                                                                                                                                                   |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Minimização     | O modelo recebe só dados do pedido necessários à resposta. A identificação devolve só o primeiro nome. Dados pessoais digitados pelo cliente são removidos. |
-| Pseudonimização | O banco do agente não guarda o telefone, só o HMAC dele. Logs usam `customerRef`/`conversationId`, nunca telefone ou ID real do cliente.                    |
-| Segurança       | Bancos separados por serviço (o agente **não** acessa o banco de pedidos), usuários de banco com menor privilégio, chaves de serviço, webhook assinado.     |
-| Transparência   | Trilha de auditoria de cada mudança de status (quem, quando, por quê e correlation id).                                                                     |
-| Retenção        | A definir com o negócio (dúvida 12). Ponto de evolução: expurgo automático de conversas e traces.                                                           |
+| Princípio       | Aplicação                                                                                                                                                                                                                                                                              |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Minimização     | O modelo recebe só dados do pedido necessários à resposta. A identificação devolve só o primeiro nome (saneado: só letras). Dados pessoais digitados pelo cliente são removidos, inclusive com separadores e formatos variados (SH-06), e mensagens recusadas não entram no histórico. |
+| Pseudonimização | O banco do agente não guarda o telefone, só o HMAC dele. Logs usam `customerRef`/`conversationId`, nunca telefone ou ID real do cliente.                                                                                                                                               |
+| Segurança       | Bancos separados por serviço (o agente **não** acessa o banco de pedidos), usuários de banco com menor privilégio, chaves de serviço, webhook assinado.                                                                                                                                |
+| Transparência   | Trilha de auditoria de cada mudança de status (quem, quando, por quê e correlation id).                                                                                                                                                                                                |
+| Retenção        | A definir com o negócio (dúvida 12). Ponto de evolução: expurgo automático de conversas e traces.                                                                                                                                                                                      |
 
 ## 5. O que fica para produção
 
@@ -105,4 +161,9 @@ O ponto mais sensível do sistema, inteiramente sem IA:
   heurística, e a melhor defesa é o dado não chegar ao modelo sem necessidade.
 - Monitorar a taxa de `guardrail.output.blocked` por motivo: cada bloqueio de resposta correta é
   um falso positivo que o cliente vê como mensagem genérica.
+- Classificador semântico (um modelo pequeno com saída estruturada) como segunda opinião do
+  guardrail de saída: pega paráfrases que regra nenhuma prevê. Só pode bloquear, nunca liberar o
+  que as regras bloquearam.
+- Manter o agente pausado enquanto o atendimento humano estiver aberto, mesmo depois da
+  inatividade da conversa (hoje, após 30 minutos, uma conversa nova recomeça com o agente).
 - mTLS ou tokens de curta duração entre serviços.

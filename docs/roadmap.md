@@ -14,6 +14,7 @@ testes passando, revisão do código e commit.
 | 6    | Avaliações com o modelo real e testes adversariais                                                                | Concluída |
 | 7    | Documentação final, decisões e limitações                                                                         | Concluída |
 | 8    | Endurecimento a partir dos evals: guardrail calibrado, filtro do catálogo, confirmação com vários pedidos, prompt | Concluída |
+| 9    | Red team em três frentes (guardrails, lógica e modelo real) e correção das brechas                                | Concluída |
 
 ## Como a fase 6 terminou
 
@@ -22,6 +23,21 @@ diagnóstico e a final, com 3 execuções por cenário e juiz Sonnet 5.5. A prim
 cenários originais. As falhas, e 20 cenários novos criados para procurar brechas, levaram às
 correções da fase 8. Os relatórios estão em [`evals/`](evals/README.md), com o histórico do que
 cada falha mudou.
+
+## Fase 9: red team
+
+Dois revisores independentes atacaram o código (guardrails e lógica de estado) e 32 ataques novos
+rodaram contra o modelo real. As brechas confirmadas foram corrigidas com teste; a suíte passou a
+ter 83 cenários e o corpus de ataques ficou nos testes unitários. Detalhes em
+[`evals/README.md`](evals/README.md) e na decisão D12 de
+[`09-decisoes-e-limitacoes.md`](09-decisoes-e-limitacoes.md).
+
+Na rodada seguinte (rodada 9), a suíte completa rodou de novo nos dois modelos. O modelo não
+produziu nenhuma afirmação falsa; as reprovações eram o guardrail barrando recusas corretas e, na
+situação de risco, o Haiku esquecendo o acolhimento ou o CVV. Cada recusa virou teste e exceção
+estreita, e cada exceção passou por mais duas revisões white-box que tentaram abusar dela. A
+mensagem de apoio virou template, o guardrail passou a bloquear ações que o agente não tem como
+fazer (endereço, pagamento, cupom) e a suíte ganhou 6 cenários (89). Decisão D13.
 
 ## Próximos passos
 
@@ -33,9 +49,11 @@ Em ordem de valor para uma operação real:
    motivo mostra falsos positivos que o cliente vê como mensagem genérica.
 3. **Minimizar o catálogo enviado ao modelo.** Descrição do produto só quando o cliente pedir
    detalhes do item: é a defesa contra injeção declarativa, que heurística não pega.
-4. **Calibrar o juiz** com uma amostra rotulada por pessoas, e usar um juiz de outra família de
+4. **Classificador semântico na saída.** Um modelo pequeno como segunda opinião do guardrail, para
+   paráfrases que regra nenhuma prevê (só bloqueia, nunca libera).
+5. **Calibrar o juiz** com uma amostra rotulada por pessoas, e usar um juiz de outra família de
    modelos para não depender de um modelo avaliando a si mesmo.
-5. **Itens de produção** já listados em [`03-seguranca-e-guardrails.md`](03-seguranca-e-guardrails.md)
+6. **Itens de produção** já listados em [`03-seguranca-e-guardrails.md`](03-seguranca-e-guardrails.md)
    e [`09-decisoes-e-limitacoes.md`](09-decisoes-e-limitacoes.md): lock por conversa com várias
    instâncias, webhook assíncrono, segundo fator, retenção de dados, integração com a ferramenta de
    atendimento.

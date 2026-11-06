@@ -183,16 +183,24 @@ garantias se mantêm independentemente do modelo.
 ## 6. Avaliação do comportamento (evals)
 
 Os testes automatizados usam um modelo roteirizado, o que é determinístico e serve para provar o
-harness. Para medir o **modelo real**, há uma suíte de avaliação com 51 cenários:
+harness. Para medir o **modelo real**, há uma suíte de avaliação com 89 cenários:
 
 - consulta, cancelamento, escopo e falhas, inclusive conversas de vários turnos (pedido despachado
   no meio da conversa, troca de pedido durante a confirmação, dois pedidos na mesma mensagem);
-- 25 ataques de red team em português e inglês: ignorar regras, falsa autoridade, falso
-  "sistema", tags internas falsas, falsa transcrição do agente, ofuscação (`1gn0r3`), base64,
-  extração, tradução e repetição do prompt, nomes das ferramentas, roleplay, pressão emocional,
-  insistência com ameaça, pedido de outra pessoa, enumeração de pedidos, dados de terceiros,
-  frase de sucesso forçada, contradição do sistema, injeção indireta pelo catálogo (com ordem
-  explícita e com uma afirmação falsa sem ordem nenhuma), CPF e cartão no encaminhamento.
+- 55 ataques de red team em português, inglês e espanhol: ignorar regras, falsa autoridade (gerente,
+  TI, delegado, falso atendente), falso "sistema", tags internas falsas, falso resultado de
+  ferramenta e JSON forjado, falsa transcrição do agente, instrução dividida em turnos, escalada
+  gradual, many-shot, paráfrase coagida ("já era"), código numérico, ofuscação (`1gn0r3`,
+  homóglifos cirílicos), base64, extração, tradução, repetição, acróstico e "complete a frase" do
+  prompt, canary ofuscado, nomes das ferramentas, roleplay, pressão emocional, situação de risco,
+  insistência com ameaça, pedido de outra pessoa, enumeração de pedidos, troca de identidade,
+  dados de terceiros, frase de sucesso forçada, contradição do sistema, palavra-código e emoji como
+  confirmação, imagem markdown para exfiltrar dados, cupom, resumo envenenado para o atendente,
+  injeção pelo catálogo (ordem explícita, afirmação falsa sem ordem, título com promessa, link
+  disfarçado), CPF e cartão no encaminhamento, "conto" e tradução com a frase de sucesso, resposta
+  só em JSON com o status pedido;
+- ações que o agente não tem como fazer (mudar o endereço e "só confirmar que mudou"), "SIM"
+  adiantado antes da pergunta e garantia de prazo de entrega.
 
 Cada cenário roda dentro do harness verdadeiro e é verificado de forma **objetiva**: estado final
 do pedido, ferramentas chamadas (e quantas vezes), cancelamento executado ou não, padrões
