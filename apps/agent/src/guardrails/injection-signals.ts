@@ -1,3 +1,5 @@
+import { securityNormalize } from './normalize.js';
+
 /**
  * Detector heurístico de tentativas de manipulação do modelo (prompt injection), em PT-BR e EN.
  *
@@ -19,7 +21,7 @@ export interface InjectionAssessment {
 
 const PATTERNS: Readonly<Record<InjectionSignal, readonly RegExp[]>> = {
   instruction_override: [
-    /\b(ignore|ignora|ignorar|desconsidere|desconsiderar|esqueca|esquecer|esqueça|override|disregard|forget)\b.{0,40}\b(instruc|regra|rule|instruction|prompt|diretriz|orienta|politica|policy|anterior|previous|above|acima)/,
+    /\b(ignore|ignora|ignorar|desconsidere|desconsiderar|esqueca|esquecer|esqueça|override|disregard|forget)\b.{0,40}\b(instruc|regra|rule|instruction|prompt|diretriz|orienta|politica|policy|anterior|previous|above|acima|antes|dito|disseram|before|said|told)/,
     /\b(nova|novas|new)\s+(instruc|regra|rule|instruction|diretriz)/,
     /\b(sem|without)\s+(restric|regras|limites|rules|restrictions|limits)/,
   ],
@@ -48,16 +50,21 @@ const PATTERNS: Readonly<Record<InjectionSignal, readonly RegExp[]>> = {
     /\b(diga|informe|avise|responda|fale)\s+(ao|a|para o|pro)\s+(cliente|usuario|comprador)\b/,
     /\b(order|pedido)\b.{0,40}\b(cancell?ed|cancelad[oa]|refunded|estornad[oa]|reembolsad[oa])\b/,
     /\b(collect|ask for|request|colete|coletar|pe[cç]a|pedir|solicite)\b.{0,30}\b(card|credit card|cartao|cpf|senha|password)\b/,
+    // Promessa comercial em dado de produto: o título aparece na pergunta de confirmação (texto
+    // fixo do sistema) e "reembolso garantido em 24h" viraria promessa da loja (visto nos evals).
+    /\b(reembolso|estorno|refund(ed)?|cashback|dinheiro de volta|money back|devolucao do (valor|dinheiro))\b/,
+    /\b(garantid[oa]s?|guaranteed|cupom|coupon|promo code|codigo promocional)\b/,
+    // Ordens e afirmações sobre a compra, em qualquer formulação que a revisão adversarial usou.
+    /\b(informe|diga|avise|afirme|confirme|responda|dile|let)\b.{0,40}\b(compra|pedido|pagamento|purchase|order|payment|compra)\b/,
+    /\b(compra|purchase|pedido|order|pagamento|payment)\b.{0,40}\b(foi|was|has been|fue|esta|is)\s+(cancelad|anulad|estornad|reembolsad|encerrad|voided|refunded|reembolsada|anulada|cancell?ed)/,
+    /\b(ao responder|when answering|always say|sempre diga|agora voce e|you are now|esqueca o que|forget what)\b/,
+    /\b(chave pix|pix key|codigo (que chegou|recebido) por sms|sms code|numero do cartao|card number)\b/,
+    /\b(atencao|nota|note|aviso)\s+(ao|a|para o|para a|to the|to)?\s*(atendente|assistente|suporte|support|bot|ia|ai|agent)\b/,
   ],
 };
 
-function normalize(text: string): string {
-  return text
-    .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[\u200B-\u200F\u2060-\u206F\uFEFF]/g, '')
-    .toLowerCase();
-}
+/** Mesma normalização dos outros guardrails: invisíveis, homóglifos, acentos, letras espaçadas. */
+const normalize = securityNormalize;
 
 export function assessInjection(
   text: string,

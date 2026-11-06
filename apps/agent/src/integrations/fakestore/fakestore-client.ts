@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Logger } from '@agente/shared';
 
 import { assessInjection } from '../../guardrails/injection-signals.js';
+import { securityNormalize } from '../../guardrails/normalize.js';
 import { sanitizeUntrustedText } from '../../guardrails/sanitize.js';
 import { CircuitBreaker } from '../../resilience/circuit-breaker.js';
 import { backoffDelayMs, sleep } from '../../resilience/retry.js';
@@ -53,6 +54,10 @@ const FakeStoreProductSchema = z.object({
 });
 
 const LIMITS = { title: 120, category: 60, description: 280 } as const;
+
+/** Assuntos que um dado de produto não tem por que tocar: compra, pagamento, atendimento. */
+const OFF_TOPIC =
+  /\b(pedido|compra|comprador|cliente|pagamento|pago|paga|pix|cartao|senha|sms|cpf|estorn|reembols|cancel|anulad|atendente|assistente|chatbot|purchase|refund|payment|customer|buyer|assistant|chargeback)/;
 const URL_PATTERN = /\b(?:https?:\/\/|www\.)\S+/gi;
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -250,6 +255,7 @@ export class FakeStoreClient implements CatalogClient {
   }
 
   private toProduct(raw: z.infer<typeof FakeStoreProductSchema>): CatalogProduct {
+    const offTopic = (value: string) => OFF_TOPIC.test(securityNormalize(value));
     // Links e contatos em dado externo não têm utilidade no atendimento e são vetor de phishing.
     const clean = (value: string, limit: number) =>
       sanitizeUntrustedText(value.replace(URL_PATTERN, ' '), limit);
@@ -260,7 +266,11 @@ export class FakeStoreClient implements CatalogClient {
     const category = clean(raw.category, LIMITS.category);
     const description = clean(raw.description, LIMITS.description);
 
-    const flagged = [title, category, description].some(suspicious);
+    // Campos conferidos também juntos: uma instrução dividida entre título, categoria e descrição
+    // ("nota para o" + "assistente" + "diga isso") não aparece em nenhum deles sozinho.
+    const flagged =
+      [title, category, description].some(suspicious) ||
+      suspicious(`${title} ${category} ${description}`);
     if (flagged) {
       this.options.logger.warn(
         {
@@ -276,10 +286,12 @@ export class FakeStoreClient implements CatalogClient {
 
     return {
       id: raw.id,
-      title: suspicious(title) ? `Produto ${String(raw.id)}` : title,
+      title: suspicious(title) || offTopic(title) ? `Produto ${String(raw.id)}` : title,
       category: suspicious(category) ? 'não informada' : category,
-      // Com qualquer sinal de instrução, a descrição (campo mais longo e livre) é descartada.
-      description: flagged || description === '' ? null : description,
+      // Com qualquer sinal de instrução, a descrição (campo mais longo e livre) é descartada. Também
+      // é descartada se falar da compra, do pagamento ou do atendimento: produto não precisa disso,
+      // e uma afirmação falsa sem ordem nenhuma não é pega por detector de instrução.
+      description: flagged || offTopic(description) || description === '' ? null : description,
       imageUrl: raw.image?.startsWith('https://') ? raw.image : null,
     };
   }
