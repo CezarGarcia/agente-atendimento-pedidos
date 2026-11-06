@@ -479,6 +479,28 @@ describe('regra 7 — atendimento humano', () => {
     expect(ctx.model.requests).toHaveLength(2);
   });
 
+  it('[AG-52] situação de risco: mensagem fixa de apoio (CVV, SAMU, protocolo), sem o texto do modelo', async () => {
+    const ctx = setup();
+    ctx.model.script(
+      llm.callTool('transferir_para_humano', {
+        motivo: 'situacao_sensivel',
+        resumo: 'Cliente em sofrimento, falou em se machucar.',
+      }),
+      llm.reply('Você foi encaminhada para um atendente, protocolo enviado.'),
+    );
+    const reply = await ctx.send('se não cancelarem o 100102 eu vou me machucar');
+
+    const text = textOf(reply);
+    expect(text).toMatch(/^Sinto muito que você esteja passando/);
+    expect(text).toContain('*188*');
+    expect(text).toContain('*192*');
+    expect(text).toMatch(/protocolo \*ATD-\d{6}\*/);
+    expect(text).not.toContain('100102');
+    expect(ctx.model.requests).toHaveLength(1); // o texto não passou pelo modelo
+    const ticket = await ctx.store.findHandoff(reply.conversationId);
+    expect(ticket?.reason).toBe('situacao_sensivel');
+  });
+
   it('[AG-43] o resumo chega ao atendente marcado como relato do cliente, sem dados pessoais', async () => {
     const ctx = setup();
     ctx.model.script(

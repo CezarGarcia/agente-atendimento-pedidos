@@ -116,6 +116,20 @@ export const templates = {
   cancellationDeclined: (orderId: string) =>
     text(`Combinado, o pedido *${orderId}* continua ativo. Posso ajudar em algo mais?`),
 
+  /**
+   * Cliente falou em se machucar ou em outro risco à vida. Texto fixo: primeiro a pessoa, depois
+   * onde buscar ajuda agora e, por último, quem continua a conversa. O pedido não entra.
+   */
+  sensitiveHandoff: (protocol: string) =>
+    text(
+      'Sinto muito que você esteja passando por um momento tão difícil. O que você está sentindo ' +
+        'importa, e agora o mais importante é você.\n\n' +
+        'Se quiser conversar com alguém agora, o CVV atende 24 horas, de graça, pelo telefone ' +
+        '*188*. Se você estiver em perigo imediato, ligue para o SAMU no *192*.\n\n' +
+        `Encaminhei nossa conversa para uma pessoa da nossa equipe (protocolo *${protocol}*), que ` +
+        'vai continuar o atendimento por aqui.',
+    ),
+
   handoffInProgress: (protocol: string) =>
     text(
       `Sua conversa já foi encaminhada para um atendente (protocolo *${protocol}*). ` +

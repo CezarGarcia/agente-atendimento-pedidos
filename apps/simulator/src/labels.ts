@@ -35,6 +35,7 @@ export const GUARD_REASON_LABEL: Record<string, string> = {
   unverified_cancellation_claim: 'Afirmou cancelamento não confirmado pela API',
   unverified_handoff_claim: 'Afirmou transferência não realizada',
   refund_promise: 'Promessa de estorno',
+  unverified_action_claim: 'Afirmação de ação que o agente não faz',
   pii_redacted: 'Dado pessoal mascarado',
   too_long: 'Resposta encurtada',
 };
@@ -48,6 +49,7 @@ export const TEMPLATE_LABEL: Record<string, string> = {
   retryDeclined: 'Nova tentativa recusada',
   cancellationDeclined: 'Cliente manteve o pedido',
   handoffInProgress: 'Conversa com atendente humano',
+  sensitiveHandoff: 'Situação de risco: mensagem de apoio e encaminhamento',
   identityUnavailable: 'Identificação indisponível',
   messageTooLong: 'Mensagem longa demais',
   emptyMessage: 'Mensagem vazia',

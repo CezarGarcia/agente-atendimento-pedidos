@@ -93,7 +93,9 @@ const HANDOFF_TOOL: Anthropic.Tool = {
   description:
     'Encaminha a conversa para um atendente humano; o atendimento automatizado é encerrado. Use ' +
     'quando o cliente pedir um atendente ou aceitar a oferta de encaminhamento (assuntos fora do ' +
-    'escopo, pedido não cancelável, falha técnica persistente, insatisfação).',
+    'escopo, pedido não cancelável, falha técnica persistente, insatisfação). Use o motivo ' +
+    'situacao_sensivel, sem esperar o cliente aceitar, só quando ele falar em se machucar, em ' +
+    'suicídio ou em outro risco à vida: o sistema envia a mensagem de apoio.',
   strict: true,
   input_schema: {
     type: 'object',
@@ -156,6 +158,8 @@ export interface TurnState {
   readonly cancellationNotes: CancellationNote[];
   /** Sinais de manipulação na mensagem do cliente: vão para o atendente junto com o resumo. */
   injectionSignals: readonly string[];
+  /** Encaminhado por situação de risco: a resposta é a mensagem fixa de apoio, não a do modelo. */
+  sensitiveSituation: boolean;
 }
 
 export interface ToolExecutorDependencies {
@@ -433,6 +437,7 @@ export class ToolExecutor {
         summary: `${handoffSummaryHeader(conversation, turn)}${redactPii(summary).text}`,
       }));
     turn.handoff = ticket;
+    if (reason === 'situacao_sensivel') turn.sensitiveSituation = true;
     await this.deps.store.updateConversation(conversation.id, { status: 'handed_off' });
     this.deps.logger.info(
       { event: 'agent.handoff', reason, protocol: ticket.protocol },
@@ -560,7 +565,8 @@ const orderNotFound = (): ToolOutcome => ({
   payload: {
     resultado: 'nao_encontrado',
     orientacao:
-      'Peça ao cliente para conferir o número. Não sugira que o pedido exista para outra pessoa.',
+      'Diga só que não encontrou o pedido e peça para conferir o número, sem "neste número", ' +
+      '"na sua conta" ou "no seu cadastro" (sugere que ele exista para outra pessoa).',
   },
 });
 

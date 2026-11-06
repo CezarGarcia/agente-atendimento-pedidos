@@ -183,6 +183,7 @@ export class AgentService {
       pendingCreated: null,
       cancellationNotes: [],
       injectionSignals: [],
+      sensitiveSituation: false,
     };
 
     let outcome: TurnOutcome;
@@ -644,6 +645,16 @@ export class AgentService {
             added,
             'confirmCancellation',
             templates.confirmCancellation(turn.pendingCreated, turn.cancellationNotes),
+            trace,
+          );
+        }
+        if (turn.sensitiveSituation && turn.handoff) {
+          // Situação de risco: acolhimento, CVV e SAMU não podem depender do modelo (nos evals, o
+          // modelo às vezes abria com o protocolo e esquecia o acolhimento ou o CVV).
+          return this.closeTurn(
+            added,
+            'sensitiveHandoff',
+            templates.sensitiveHandoff(turn.handoff.protocol),
             trace,
           );
         }
