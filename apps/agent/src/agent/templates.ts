@@ -101,10 +101,13 @@ export const templates = {
         'devolução do valor segue a política da loja. Posso ajudar em algo mais?',
     ),
 
-  unknownOutcomeNotCancelled: (orderId: string, status: string) =>
+  /** Só oferece cancelar de novo se a API ainda permite (um pedido enviado no meio não pode: R3). */
+  unknownOutcomeNotCancelled: (orderId: string, status: string, stillCancellable: boolean) =>
     text(
-      `Tudo bem. Consultei de novo: o pedido *${orderId}* não foi cancelado e segue ${status}. ` +
-        'Se ainda quiser cancelar, é só me pedir.',
+      `Tudo bem. Consultei de novo: o pedido *${orderId}* não foi cancelado e está ${status}. ` +
+        (stillCancellable
+          ? 'Se ainda quiser cancelar, é só me pedir.'
+          : 'Ele não pode mais ser cancelado por aqui; se quiser, posso te encaminhar para um atendente.'),
     ),
 
   conversationTooLong: () =>

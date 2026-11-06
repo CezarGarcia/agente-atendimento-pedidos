@@ -911,6 +911,49 @@ describe('achados da revisão adversarial da lógica', () => {
     expect(ctx.store.pendingActions.get(pendingId)?.status).toBe('completed');
   });
 
+  it.each([
+    ['PROCESSING', 'é só me pedir'],
+    ['SHIPPED', 'não pode mais ser cancelado por aqui'],
+  ])(
+    '[AG-46] "Agora não" depois de resultado incerto, pedido %s: só oferece cancelar se a API ainda permite',
+    async (status, expected) => {
+      const ctx = setup();
+      const pendingId = await startCancellation(ctx);
+      ctx.orders.failing.add('cancel'); // a API caiu: resultado incerto, nada foi cancelado
+      await ctx.press(`${CONFIRM_PAYLOAD_PREFIX}${pendingId}`, 'Sim, cancelar');
+      ctx.orders.failing.delete('cancel');
+      ctx.orders.setStatus('100101', status); // no meio, o pedido pode ter sido despachado
+
+      const reply = await ctx.press(`${DECLINE_PAYLOAD_PREFIX}${pendingId}`, 'Agora não');
+      expect(textOf(reply)).toContain('Consultei de novo: o pedido *100101* não foi cancelado');
+      expect(textOf(reply)).toContain(expected);
+      expect(ctx.orders.orders.get('100101')?.status).toBe(status);
+    },
+  );
+
+  it('[AG-53] com um cancelamento em execução, não abre outra confirmação (várias instâncias)', async () => {
+    const ctx = setup();
+    const pendingId = await startCancellation(ctx);
+    // Outra instância confirmou e está esperando a API: a ação está em execução.
+    const running = ctx.store.pendingActions.get(pendingId);
+    if (!running) throw new Error('ação não criada');
+    ctx.store.pendingActions.set(pendingId, { ...running, status: 'executing' });
+    ctx.orders.setStatus('100103', 'PROCESSING');
+    ctx.model.script(
+      llm.callTool('solicitar_cancelamento', { numero_pedido: '100103', motivo: null }),
+      llm.reply('Já tem um pedido seu sendo processado agora; te aviso do resultado em instantes.'),
+    );
+
+    const reply = await ctx.send('cancela o 100103 também');
+    expect(reply.messages[0]?.quickReplies).toBeUndefined();
+    expect(JSON.stringify(ctx.model.requests.at(-1)?.messages.at(-1))).toContain(
+      'cancelamento_em_andamento',
+    );
+    expect([...ctx.store.pendingActions.values()].map((a) => `${a.orderId}:${a.status}`)).toEqual([
+      '100101:executing',
+    ]);
+  });
+
   it('[AG-51] conversa longa demais é encerrada antes de chamar o modelo', async () => {
     const ctx = setup();
     ctx.model.script(llm.reply('Oi! Como posso ajudar?'));
@@ -982,6 +1025,9 @@ describe('achados da revisão adversarial da lógica', () => {
     ['   ', null],
     // 220 caracteres que viram ~380 depois do mascaramento (cada telefone vira um marcador maior).
     [Array.from({ length: 20 }, () => '98765-4321').join(' '), 300],
+    // Motivo longo demais: antes era recusado como "número inválido" e o modelo pedia ao cliente
+    // para conferir um número que estava certo.
+    ['Mudei de ideia porque '.repeat(20), 300],
   ])(
     '[AG-50] motivo sempre aceito pela API (vazio vira nulo, mascarado e cortado): %#',
     async (motivo, expected) => {

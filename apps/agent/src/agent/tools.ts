@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { redactPii, type Logger } from '@agente/shared';
 
-import type { ConversationStore } from '../conversation/store.js';
+import { OpenActionConflictError, type ConversationStore } from '../conversation/store.js';
 import type { CatalogClient, CatalogLookup } from '../integrations/fakestore/fakestore-client.js';
 import type { ApiOrder, OrdersApi } from '../integrations/orders-api/orders-api-client.js';
 import { BLOCK_REASON_LABEL, formatDate, statusLabel } from './presentation.js';
@@ -128,7 +128,9 @@ const InputSchemas = {
   [TOOL.listOrders]: z.object({}),
   [TOOL.requestCancellation]: z.object({
     numero_pedido: OrderNumberInput,
-    motivo: z.string().trim().max(300).nullable().optional(),
+    // Sem limite aqui: um motivo longo é cortado em cancellationReason(). Recusá-lo fazia o modelo
+    // pedir ao cliente para conferir o número do pedido, que estava certo.
+    motivo: z.string().nullable().optional(),
   }),
   [TOOL.handoff]: z.object({
     motivo: z.enum(HANDOFF_REASONS),
@@ -398,6 +400,10 @@ export class ToolExecutor {
       );
     }
 
+    // Um cancelamento em execução (outra instância esperando a API) segura a vaga: abrir outra
+    // pergunta agora faria o resultado dele se perder.
+    const actions = await this.deps.store.listPendingActions(conversation.id);
+    if (actions.some((action) => action.status === 'executing')) return cancellationInProgress();
     const open = await this.deps.store.findOpenPendingAction(conversation.id);
     if (open) await this.deps.store.updatePendingAction(open.id, { status: 'superseded' });
 
@@ -414,7 +420,12 @@ export class ToolExecutor {
       createdAt: now,
       expiresAt: new Date(now.getTime() + this.deps.confirmationTtlMs),
     };
-    await this.deps.store.savePendingAction(action);
+    try {
+      await this.deps.store.savePendingAction(action);
+    } catch (error) {
+      if (error instanceof OpenActionConflictError) return cancellationInProgress();
+      throw error;
+    }
     turn.pendingCreated = action;
 
     return { outcome: 'confirmacao_solicitada', payload: confirmationSent(action) };
@@ -547,6 +558,13 @@ function markCancelled(turn: TurnState, orderId: string): void {
   turn.verifiedCancelledOrderIds.add(orderId);
   turn.verifiedThisTurn.add(orderId);
 }
+
+const cancellationInProgress = (): ToolOutcome =>
+  failure(
+    'cancelamento_em_andamento',
+    'Um cancelamento desta conversa está sendo processado agora. Não peça outra confirmação: ' +
+      'diga ao cliente que o resultado chega em instantes e que ele pode pedir de novo depois.',
+  );
 
 const failure = (code: string, message: string): ToolOutcome => ({
   outcome: `erro:${code}`,

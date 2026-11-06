@@ -739,7 +739,11 @@ export class AgentService {
     if (lookup?.kind === 'found') {
       return finish(
         'unknownOutcomeNotCancelled',
-        templates.unknownOutcomeNotCancelled(pending.orderId, statusLabel(lookup.order.status)),
+        templates.unknownOutcomeNotCancelled(
+          pending.orderId,
+          statusLabel(lookup.order.status),
+          lookup.order.cancellation.eligible,
+        ),
         'checked:not_cancelled',
       );
     }

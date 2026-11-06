@@ -9,9 +9,16 @@ import type {
   StoredMessage,
   TurnTrace,
 } from '../agent/types.js';
-import type { CompletedTurn, ConversationStore, MessageClaim } from './store.js';
+import {
+  OpenActionConflictError,
+  type CompletedTurn,
+  type ConversationStore,
+  type MessageClaim,
+} from './store.js';
 
 const OPEN_STATUSES = new Set<PendingActionStatus>(['awaiting_confirmation', 'outcome_unknown']);
+/** Ocupam a vaga única de ação aberta da conversa (como o índice do Postgres). */
+const SLOT_STATUSES = new Set<PendingActionStatus>([...OPEN_STATUSES, 'executing']);
 
 /** Implementação em memória do `ConversationStore`, usada nos testes do agente. */
 export class InMemoryConversationStore implements ConversationStore {
@@ -80,10 +87,10 @@ export class InMemoryConversationStore implements ConversationStore {
     const open = [...this.pendingActions.values()].some(
       (other) =>
         other.conversationId === action.conversationId &&
-        OPEN_STATUSES.has(other.status) &&
-        OPEN_STATUSES.has(action.status),
+        SLOT_STATUSES.has(other.status) &&
+        SLOT_STATUSES.has(action.status),
     );
-    if (open) return Promise.reject(new Error('já existe uma ação aberta nesta conversa'));
+    if (open) return Promise.reject(new OpenActionConflictError());
     this.pendingActions.set(action.id, action);
     return Promise.resolve();
   }

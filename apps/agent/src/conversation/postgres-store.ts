@@ -13,7 +13,21 @@ import type {
   TurnTrace,
 } from '../agent/types.js';
 import type { AgentDatabase } from './database.js';
-import type { CompletedTurn, ConversationStore, MessageClaim } from './store.js';
+import {
+  OpenActionConflictError,
+  type CompletedTurn,
+  type ConversationStore,
+  type MessageClaim,
+} from './store.js';
+
+const ONE_OPEN_ACTION_INDEX = 'pending_actions_one_open_per_conversation';
+
+const violatesOneOpenAction = (error: unknown): boolean =>
+  error instanceof Error &&
+  'code' in error &&
+  error.code === '23505' &&
+  'constraint' in error &&
+  error.constraint === ONE_OPEN_ACTION_INDEX;
 
 type ConversationRow = Selectable<AgentDatabase['conversations']>;
 type PendingRow = Selectable<AgentDatabase['pending_actions']>;
@@ -142,6 +156,15 @@ export class PostgresConversationStore implements ConversationStore {
   }
 
   async savePendingAction(action: PendingAction): Promise<void> {
+    try {
+      await this.insertPendingAction(action);
+    } catch (error) {
+      if (violatesOneOpenAction(error)) throw new OpenActionConflictError();
+      throw error;
+    }
+  }
+
+  private async insertPendingAction(action: PendingAction): Promise<void> {
     await this.db
       .insertInto('pending_actions')
       .values({

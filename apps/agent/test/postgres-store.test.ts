@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
 
 import type { Kysely } from 'kysely';
+import { Migrator } from 'kysely/migration';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { inject } from 'vitest';
 
 import { createLogger } from '@agente/shared';
@@ -12,6 +13,7 @@ import { CONFIRM_PAYLOAD_PREFIX } from '../src/agent/confirmation.js';
 import { ToolExecutor } from '../src/agent/tools.js';
 import type { LlmMessage, TurnTrace } from '../src/agent/types.js';
 import {
+  AGENT_MIGRATIONS,
   createAgentDatabase,
   migrateAgentDatabase,
   type AgentDatabase,
@@ -255,6 +257,120 @@ describe('PostgresConversationStore com o agente real', () => {
     await store.savePendingAction(action('100101'));
     await expect(store.savePendingAction(action('100103'))).rejects.toThrow();
     expect((await store.findOpenPendingAction(conversation.id))?.orderId).toBe('100101');
+  });
+
+  it('[PG-08] duas instâncias: um cancelamento em execução não perde o resultado incerto', async () => {
+    const store = new PostgresConversationStore(db);
+    const first = agentWith(store);
+    const second = agentWith(store);
+    // A API da instância A demora e devolve erro técnico (resultado incerto).
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    first.orders.requestCancellation = async () => {
+      await gate;
+      return { kind: 'technical_error', reason: 'timeout' };
+    };
+    first.model.script(
+      llm.callTool('solicitar_cancelamento', { numero_pedido: '100101', motivo: null }),
+    );
+    second.orders.setStatus('100103', 'PROCESSING');
+    second.model.script(
+      llm.callTool('solicitar_cancelamento', { numero_pedido: '100103', motivo: null }),
+      llm.reply('Já tem um pedido seu sendo processado; te aviso do resultado em instantes.'),
+    );
+    const phone = PHONES.ana;
+    await first.agent.endConversation(phone); // conversa nova, sem ações de outros testes
+
+    const question = await first.agent.handle({
+      messageId: 'race-1',
+      from: phone,
+      text: 'cancela o 100101',
+    });
+    const payload = question.messages[0]?.quickReplies?.[0]?.payload ?? '';
+    const confirming = first.agent.handle({
+      messageId: 'race-2',
+      from: phone,
+      button: { payload, title: 'Sim, cancelar' },
+    });
+    await vi.waitFor(async () => {
+      const actions = await store.listPendingActions(question.conversationId);
+      expect(actions.map((a) => a.status)).toContain('executing');
+    });
+    const other = await second.agent.handle({
+      messageId: 'race-3',
+      from: phone,
+      text: 'e o 100103?',
+    });
+    release();
+    const result = await confirming;
+
+    expect(other.messages[0]?.quickReplies).toBeUndefined();
+    expect(result.messages[0]?.text).toContain('não consegui confirmar');
+    const actions = await store.listPendingActions(question.conversationId);
+    expect(actions.map((a) => `${a.orderId}:${a.status}`)).toEqual(['100101:outcome_unknown']);
+  });
+
+  it('[PG-09] migration 0004 sobre dados antigos: a ação em execução segue, a outra perde a vez', async () => {
+    const adminUrl = inject('postgresAdminUrl');
+    const name = `agent_mig_${randomUUID().replaceAll('-', '')}`;
+    const admin = new pg.Client({ connectionString: adminUrl });
+    await admin.connect();
+    await admin.query(`CREATE DATABASE ${name}`);
+    const url = new URL(adminUrl);
+    url.pathname = `/${name}`;
+    const oldDb = createAgentDatabase(url.toString(), { logger: silent });
+    try {
+      const migrator = new Migrator({
+        db: oldDb,
+        provider: { getMigrations: () => Promise.resolve(AGENT_MIGRATIONS) },
+      });
+      expect((await migrator.migrateTo('0003-one-open-action')).error).toBeUndefined();
+      const conversation = await new PostgresConversationStore(oldDb).createConversation({
+        phoneRef: 'tel_migracao',
+        customerId: null,
+        customerFirstName: null,
+        identityStatus: 'unknown_customer',
+        llmProfile: 'perfil',
+      });
+      const row = (orderId: string, status: string) => ({
+        id: randomUUID(),
+        conversation_id: conversation.id,
+        type: 'cancel_order',
+        order_id: orderId,
+        reason: null,
+        order_summary: '1 item, total R$ 1,00',
+        status,
+        awaiting_text_reply: true,
+        created_at: new Date(),
+        expires_at: new Date(Date.now() + 600_000),
+        updated_at: new Date(),
+      });
+      // Estado que a 0003 permitia: uma em execução e outra aberta na mesma conversa.
+      await oldDb
+        .insertInto('pending_actions')
+        .values([row('100101', 'executing'), row('100103', 'awaiting_confirmation')])
+        .execute();
+
+      expect((await migrator.migrateToLatest()).error).toBeUndefined();
+      const store = new PostgresConversationStore(oldDb);
+      const statuses = (await store.listPendingActions(conversation.id)).map(
+        (a) => `${a.orderId}:${a.status}`,
+      );
+      expect(statuses.sort()).toEqual(['100101:executing', '100103:superseded']);
+      // Daqui em diante o banco recusa abrir outra enquanto uma está em execução.
+      await expect(
+        oldDb
+          .insertInto('pending_actions')
+          .values(row('100103', 'awaiting_confirmation'))
+          .execute(),
+      ).rejects.toThrow();
+    } finally {
+      await oldDb.destroy();
+      await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+      await admin.end();
+    }
   });
 
   it('[PG-06] mantém um único protocolo de atendimento por conversa', async () => {

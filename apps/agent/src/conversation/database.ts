@@ -14,6 +14,7 @@ import type { AgentReply, LlmMessage, TurnTrace } from '../agent/types.js';
 import * as initialSchema from './migrations/0001-initial-schema.js';
 import * as reviewHardening from './migrations/0002-review-hardening.js';
 import * as oneOpenAction from './migrations/0003-one-open-action.js';
+import * as executingIsOpen from './migrations/0004-executing-is-open.js';
 
 type Timestamp = ColumnType<Date, Date | string, Date | string>;
 
@@ -94,10 +95,12 @@ export function createAgentDatabase(
   return new Kysely<AgentDatabase>({ dialect: new PostgresDialect({ pool }) });
 }
 
-const migrations: Record<string, Migration> = {
+/** Exportadas para os testes aplicarem uma migration sobre dados de versões anteriores. */
+export const AGENT_MIGRATIONS: Record<string, Migration> = {
   '0001-initial-schema': initialSchema,
   '0002-review-hardening': reviewHardening,
   '0003-one-open-action': oneOpenAction,
+  '0004-executing-is-open': executingIsOpen,
 };
 
 export async function migrateAgentDatabase(
@@ -106,7 +109,7 @@ export async function migrateAgentDatabase(
 ): Promise<void> {
   const migrator = new Migrator({
     db,
-    provider: { getMigrations: () => Promise.resolve(migrations) },
+    provider: { getMigrations: () => Promise.resolve(AGENT_MIGRATIONS) },
   });
   const { error, results } = await migrator.migrateToLatest();
   for (const result of results ?? []) {

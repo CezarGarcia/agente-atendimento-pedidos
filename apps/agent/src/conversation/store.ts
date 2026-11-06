@@ -8,6 +8,17 @@ import type {
   TurnTrace,
 } from '../agent/types.js';
 
+/**
+ * A conversa já tem uma ação aberta ou em execução: o banco (índice único) e o store em memória
+ * recusam a segunda. Distinto de uma falha de infraestrutura, para o agente poder explicar.
+ */
+export class OpenActionConflictError extends Error {
+  override readonly name = 'OpenActionConflictError';
+  constructor() {
+    super('A conversa já tem uma ação aberta ou em execução');
+  }
+}
+
 export type MessageClaim =
   | { readonly status: 'claimed' }
   /** Já processada (reply) ou em processamento por outra requisição (reply null). */
