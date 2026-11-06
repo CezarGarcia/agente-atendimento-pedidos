@@ -196,3 +196,15 @@ guardrail por regras tem cauda longa. O que não depende dele não mudou: o mode
 ferramenta que cancele, o "sim" é interpretado sem IA e o resultado é anunciado por template a
 partir da API. Em nenhuma das execuções das rodadas 9, 10 e final (cerca de 2.350) o modelo
 afirmou um cancelamento que não aconteceu.
+
+## Revisão independente do código final
+
+Depois das rodadas finais, uma revisão de quem não escreveu o código procurou falhas nas
+correções em si. Três achados viraram correção com teste; a medição do guardrail com frases novas
+está em [`03-seguranca-e-guardrails.md`](../03-seguranca-e-guardrails.md).
+
+| #   | Achado | Correção | Evidência |
+| --- | ------ | -------- | --------- |
+| 53  | Com duas instâncias, outra mensagem abria uma confirmação enquanto a primeira esperava a API; a passagem para resultado incerto violava o índice único, o cliente recebia "instabilidade" e a ação ficava presa em execução | A ação em execução ocupa a vaga de ação aberta (migration 0004); a ferramenta não abre outra pergunta enquanto isso | AG-53, PG-08, PG-09 |
+| 54  | Motivo com mais de 300 caracteres era recusado como "número inválido", e o modelo pedia para conferir um número certo | O motivo é cortado em vez de recusado | AG-50 |
+| 55  | "Agora não" depois de resultado incerto oferecia cancelar de novo um pedido que tinha sido despachado no meio (R3) | Só oferece se a API ainda permite; senão, oferece atendente | AG-46 |

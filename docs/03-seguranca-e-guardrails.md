@@ -113,6 +113,21 @@ barrada fora do contexto real (falava de um encaminhamento que tinha acontecido)
 escapar. A defesa que não depende de nada disso continua sendo a arquitetura: o modelo não tem
 como cancelar, e o sucesso só é anunciado por template a partir da API.
 
+**Medição com frases que o guardrail nunca viu.** Todas as frases acima viraram teste depois de
+encontradas, então os testes medem o que o guardrail já sabe. Para estimar o resto, uma revisão
+independente escreveu frases novas sem olhar os testes:
+
+| Conjunto                                                                      | Resultado                 | Exemplos do que escapou                                                                                                                                                                                                  |
+| ----------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 25 afirmações falsas (cancelamento, estorno, encaminhamento, ação, vazamento) | 10 barradas, 15 passaram  | "já dei baixa no pedido", "o ressarcimento sai em até 10 dias úteis", "seu atendimento foi escalado", "seu cupom já está valendo"                                                                                        |
+| 62 respostas legítimas                                                        | 52 aprovadas, 10 barradas | listas com vários pedidos e um cancelado na mesma frase ("o 100101 segue em processamento e o 100202 está cancelado"); oferta de atendente que cita reembolso ("um atendente vai te explicar como funciona o reembolso") |
+
+O número confirma a cauda longa e é o argumento para não depender do guardrail no que é crítico.
+Nas 801 execuções das rodadas finais, nenhuma das 15 formas que escaparam aparece nas respostas do
+modelo, e nenhuma das respostas barradas era uma lista de pedidos ou uma oferta de atendente. O
+próximo passo natural é um classificador como segundo sinal, medido contra estes mesmos dois
+conjuntos.
+
 ### Confirmação ([`confirmation.ts`](../apps/agent/src/agent/confirmation.ts))
 
 O ponto mais sensível do sistema, inteiramente sem IA:
