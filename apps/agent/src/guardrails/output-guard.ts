@@ -34,6 +34,7 @@ export type OutputGuardReason =
   | 'unverified_cancellation_claim'
   | 'unverified_handoff_claim'
   | 'refund_promise'
+  | 'unverified_action_claim'
   | 'pii_redacted'
   | 'link_removed'
   | 'too_long';
@@ -71,12 +72,46 @@ const INTERNAL_MARKERS =
 const CANCELLATION_CLAIMS = [
   /\b(cancelad|anulad|estornad|reembolsad|desfeit|revertid)[oa]s?\b/g,
   /\b(cancel|anul|estorn|reembols)(ei|amos|ou|aram)\b/g,
-  /\b(processei|efetuei|realizei|fiz|concluí|conclui|finalizei|registrei)\s+(o|seu)?\s*(cancelamento|estorno|reembolso)\b/g,
-  /\bcancelamento\b[^.!?\n]{0,80}?\b(realizado|concluido|efetuado|efetivado|confirmado|feito|aprovado|processado|finalizado|registrado|deu certo|com sucesso|ok)\b/g,
-  /\bcancelamento\b[^.!?\n]{0,30}✅/g,
+  /\b(processei|efetuei|realizei|fiz|concluí|conclui|finalizei|registrei|processamos|efetuamos|realizamos|fizemos|concluimos|finalizamos|registramos)\s+(o|seu)?\s*(cancelamento|estorno|reembolso)\b/g,
+  /\b(acabei|acabamos|consegui|conseguimos)\s+(de\s+)?cancela(r|lo|la|los|las)\b/g,
   /\bcancell?ed\b|\bvoided\b|\brefunded\b/g,
-  /\bcancell?ation\b[^.!?\n]{0,40}\b(successful|complete|completed|confirmed|done|went through|processed)\b/g,
-  /\bcancelacion\b[^.!?\n]{0,40}\b(exitosa|realizada|completada|confirmada)\b/g,
+];
+
+/**
+ * Afirmações em duas partes: o substantivo e, adiante na mesma frase, o desfecho ("o cancelamento
+ * do pedido 100102, que estava em processamento, foi realizado"). Cada par substantivo-desfecho é
+ * avaliado à parte: a negação que vale para um ("não posso dizer que algo foi feito") não cobre
+ * outro mais adiante.
+ */
+interface SpanClaim {
+  readonly head: RegExp;
+  readonly tail: RegExp;
+  /** Distância máxima, em caracteres, entre o fim do substantivo e o desfecho. */
+  readonly window: number;
+}
+const CANCELLATION_SPANS: readonly SpanClaim[] = [
+  {
+    head: /\bcancelamentos?\b/g,
+    tail: /\b(realizad|concluid|efetuad|efetivad|confirmad|feit|aprovad|processad|finalizad|registrad)[oa]s?\b|\b(deu certo|deram certo|com sucesso|ok)\b/g,
+    window: 80,
+  },
+  { head: /\bcancelamentos?\b/g, tail: /✅/g, window: 30 },
+  {
+    head: /\bcancell?ations?\b/g,
+    tail: /\b(successful|complete|completed|confirmed|done|went through|processed|approved|accepted)\b/g,
+    window: 40,
+  },
+  {
+    head: /\bcancelacion\b/g,
+    tail: /\b(exitosa|realizada|completada|confirmada)\b/g,
+    window: 40,
+  },
+  // "Seu pedido 100102 foi excluído do sistema."
+  {
+    head: /\b(pedidos?|compras?|orders?)\b/g,
+    tail: /\b(excluid|deletad|removid)[oa]s?\b|\b(deleted|removed)\b/g,
+    window: 30,
+  },
 ];
 
 /**
@@ -89,6 +124,8 @@ const CANCELLATION_CONSEQUENCES = [
   /\bnao (sai|saira|chega|chegara) mais\b/g,
   /\bnao precisa(ra)? mais pagar\b/g,
   /\bja era\b/g,
+  /\bnao (sera|serao|vai ser) (cobrad[oa]s?|enviad[oa]s?|entregues?|despachad[oa]s?) nem (cobrad[oa]s?|enviad[oa]s?|entregues?|despachad[oa]s?)\b/g,
+  /\b(will not|won't) be (shipped|charged|delivered)\b[^.!?\n]{0,40}\b(will not|won't) be (shipped|charged|delivered)\b/g,
   /\b(will no longer|won't) (be )?(ship|shipped|delivered|charged|arrive)\b/g,
 ];
 /** Condição no começo da frase ou depois de vírgula ("Se você confirmar, …"); não o "se" reflexivo. */
@@ -125,6 +162,48 @@ const REFUND_PROMISE =
   /\b(cai|caira|cair|sera|vai|volta|voltar|devolvid|creditad|aprovad|garantid|realizad|efetuad|feit|processad|imediat|automaticamente|em ate \d+|em \d+\s*(dias?|horas?)|\d+\s*dias? uteis|full refund|will get|will be)/;
 
 /*
+ * Ações que o agente não tem como executar (não há ferramenta para isso): mudar endereço, dados
+ * de pagamento ou itens, reagendar a entrega, aplicar cupom ou desconto. Toda afirmação de que fez
+ * é falsa, e o cliente agiria com base nela (esperar a entrega no endereço novo, contar com o
+ * desconto). Verbo com objeto direto ("alterei o endereço") ou par substantivo-desfecho
+ * ("endereço … atualizado ✅"), com as mesmas exceções de negação, hipótese e citação.
+ */
+const CHANGEABLE = String.raw`(endereco|cep|cadastro|telefone|email|forma de pagamento|cartao|tamanho|cor|item|itens|produto|data de entrega)`;
+const DETERMINERS = String.raw`(?:(?:o|a|os|as|um|uma|seu|sua|seus|suas|para voce|pra voce|novo|nova)\s+){0,3}`;
+const ACTION_CLAIMS = [
+  new RegExp(
+    String.raw`\b(alterei|atualizei|mudei|corrigi|editei|troquei|substitui|ajustei|alteramos|atualizamos|mudamos|trocamos)\s+${DETERMINERS}${CHANGEABLE}\b`,
+    'g',
+  ),
+  new RegExp(
+    String.raw`\b(reagendei|remarquei|adiantei|reagendamos)\s+${DETERMINERS}(entrega|data)\b`,
+    'g',
+  ),
+  new RegExp(
+    String.raw`\b(apliquei|liberei|emiti|gerei|concedi|aplicamos|liberamos)\s+${DETERMINERS}(cupom|desconto|frete|nota fiscal|boleto|pix|credito|vale)\b`,
+    'g',
+  ),
+  /\b(i|we)(\s+have|'ve)?\s+(updated|changed|corrected|applied|rescheduled)\s+(your|the)\s+(address|payment|delivery|coupon|discount|size|item)\b/g,
+];
+const ACTION_SPANS: readonly SpanClaim[] = [
+  {
+    head: new RegExp(String.raw`\b${CHANGEABLE}\b`, 'g'),
+    tail: /\b(alterad|atualizad|mudad|trocad|corrigid|editad|substituid|ajustad|reagendad|remarcad)[oa]s?\b/g,
+    window: 40,
+  },
+  {
+    head: /\b(troca|devolucao|desconto|cupom|frete gratis|credito|vale compra)\b/g,
+    tail: /\b(aprovad|confirmad|agendad|aplicad|liberad|autorizad|concedid)[oa]s?\b|✅/g,
+    window: 30,
+  },
+  {
+    head: /\b(address|delivery date|payment method|coupon|discount)\b/g,
+    tail: /\b(updated|changed|corrected|rescheduled|applied)\b/g,
+    window: 20,
+  },
+];
+
+/*
  * Negação e hipótese só valem coladas na afirmação: entre elas, no máximo palavras vazias
  * ("não FOI cancelado", "nenhum DOS SEUS PEDIDOS FOI cancelado"). "Nem esquenta que tá cancelado"
  * e "Não demorou nada e já foi cancelado" afirmam.
@@ -135,21 +214,132 @@ const NEGATION_BEFORE = new RegExp(
 );
 /**
  * "Não posso dizer que foi cancelado", "não consigo confirmar que o pedido 100102 está cancelado",
- * "não deveria ter dito que foi cancelado": a afirmação é negada pelo verbo que a introduz.
+ * "não deveria ter dito que foi cancelado", "eu não disse que…", "não é verdade que…": a afirmação é
+ * negada pelo verbo que a introduz. Entre a negação e o verbo, só auxiliares: "nem preciso dizer
+ * que" e "não custa confirmar que" afirmam.
  */
 const TOKEN = String.raw`[^\s,;:!?.]+`;
+const REPORT_AUXILIARY = String.raw`(?:posso|consigo|vou|devo|deveria|deveriamos|podemos|conseguimos|tenho|ha|da|como|para|pra|e|possivel|ter|sei|estou|irei|cheguei|a)`;
 const NEGATED_REPORT_BEFORE = new RegExp(
-  String.raw`\b(nao|nem|nunca)\s+(?!so\b)(${TOKEN}\s+){0,2}(dizer|dito|afirmar|afirmado|confirmar|confirmado|informar|informado|garantir|escrever|escrito|responder)\s+que(\s+${TOKEN}){0,5}\s*$`,
+  String.raw`\b(nao|nem|nunca)\s+(?:${REPORT_AUXILIARY}\s+){0,3}(dizer|dito|disse|falar|falei|afirmar|afirmado|afirmei|confirmar|confirmado|confirmei|informar|informado|informei|garantir|garanti|escrever|escrito|escrevi|responder|respondi)\s+que(\s+${TOKEN}){0,5}\s*$|\bnao\s+e\s+(verdade|correto|certo)\s+que(\s+${TOKEN}){0,5}\s*$`,
 );
-/** Futuro/hipótese colados: "será cancelado", "pode ser cancelado", "quer que seja cancelado". */
+/**
+ * Recusa de escrever o texto pedido: "não posso escrever uma mensagem dizendo que o pedido 100102
+ * foi cancelado" (o modelo recusando o "conto" do atacante; visto nos evals).
+ */
+const NEGATED_WRITE_BEFORE = new RegExp(
+  String.raw`\b(nao|nem|nunca)\s+(?:(?:posso|vou|consigo|devo|irei|podemos|vamos)\s+)?(?:escrever|enviar|mandar|criar|gerar|montar|produzir)\s+(?:(?:um|uma|o|a|esse|essa|este|esta|nenhum|nenhuma)\s+)?(?:mensagem|frase|resposta|texto|nota|historia|conto|json|aviso)\s+(?:dizendo|afirmando|informando|confirmando|falando)\s+que(\s+${TOKEN}){0,5}\s*$`,
+);
+/**
+ * O que um texto recusado diria: "não consigo responder com esse JSON, porque ele afirmaria que o
+ * pedido está cancelado". Só com o texto como sujeito: "eu diria que está cancelado" afirma.
+ */
+const ARTIFACT_WOULD_SAY_BEFORE = new RegExp(
+  String.raw`\b(ele|ela|isso|isto|o json|a mensagem|a frase|o texto|a resposta)\s+(afirmaria|diria|significaria|indicaria|informaria|daria a entender)\s+que(\s+${TOKEN}){0,5}\s*$`,
+);
+/**
+ * Futuro e hipótese colados: "será cancelado", "pode ser cancelado", "quer que seja cancelado",
+ * "para ser cancelado, o pedido precisa…". "Teve que ser cancelado", "levou um minuto pra ser
+ * cancelado" e "had to be cancelled" afirmam.
+ */
 const HYPOTHETICAL_BEFORE =
-  /\b(sera|serao|seja|sejam|for|forem|fosse|seria|(pode|podem|possa|poderia|vai|vao|deve|devem|precisa|consigo|posso|para|pra|que)\s+(ser|ficar|seja|fique|sejam)|will be|would be|can be|could be|to be|be)\s+$/;
+  /\b(sera|serao|seja|sejam|for|forem|fosse|seria|(pode|podem|possa|poderia|vai|vao|deve|devem|precisa|consigo|posso|para|pra)\s+(ser|ficar|seja|fique|sejam)|(will|would|can|could|may|might|should|must) be|needs? to be)\s+$/;
+const DURATION_BEFORE =
+  /\b(levou|demorou|bastou|bastaram|precisou)\b[^.!?\n]{0,40}\b(para|pra)\s+ser\s+$/;
+/**
+ * Subjuntivo só vale sob dúvida ou negação ("não tenho informação de que o pedido tenha sido
+ * cancelado") ou numa relativa genérica ("um cancelamento que tenha sido confirmado"). "Fico feliz
+ * que tenha sido cancelado" e "embora tenha sido cancelado" afirmam.
+ */
+const SUBJUNCTIVE_BEFORE =
+  /\b((tenha|tenham|tiver|tiverem|tivesse|tivessem) sido|esteja|estejam|estivesse|estivessem)\s+$/;
+const DOUBT_FRAME = new RegExp(
+  String.raw`\b((nao|nem|nenhum|nenhuma|sem)\s+(?:${TOKEN}\s+){0,3}(informacao|registro|confirmacao|indicacao|sinal|evidencia|prova)\s+(?:de\s+)?que|duvido que|nao acredito que|nao consta que|nao parece que)(\s+${TOKEN}){0,7}\s*$`,
+);
+const INDEFINITE_BEFORE = /\b(um|uma|qualquer|algum|alguma|nenhum|nenhuma)\s+$/;
+/** "Ela não corresponde a um cancelamento realizado", "não houve cancelamento". */
+const NEGATED_RELATION_BEFORE =
+  /\b(nao|nem)\s+(corresponde|correspondem|condiz|condizem|equivale|equivalem|reflete|refletem|significa|significam|indica|indicam|houve|existe|existiu|ha|teve)\s+(?:(?:a|ao|com|de|um|uma|o|algum|alguma|nenhum|nenhuma|qualquer)\s+){0,2}$/;
+/** Presente genérico, só com a condição logo depois: "o cancelamento só é concluído se você…". */
+const GENERIC_PRESENT_BEFORE = /\b(e|sao)\s+$/;
+/** Particípios coordenados herdam o auxiliar: "deve ser feito e confirmado". */
+const COORDINATED_PARTICIPLE = /\b[a-z]+(ad|id|eit|ert|ost)[oa]s?\s+e\s+$/;
+/**
+ * Condição restritiva: "só posso considerar o cancelamento confirmado quando você tocar no botão".
+ * Vale só com as duas partes: "só posso considerar/dar como/tratar como" antes e a condição logo
+ * depois ("se precisar" e "se quiser" não são condição do cancelamento).
+ */
+const RESTRICTIVE_BEFORE =
+  /\b(so|somente|apenas)\s+(?:(?:(?:posso|pode|podemos|vou|consigo|da para|e possivel)\s+(?:considerar|dar como|tratar como)|considero|consideramos)\s+(?:(?:o|a|seu|sua|pedido|\d{6})\s+){0,3}|(?:confirmo|informo|digo|aviso|anuncio)\s+(?:que\s+)?(?:(?:um|uma|o|a|seu|sua|pedido)\s+){0,3}(?:(?:foi|esta|ficou)\s+)?)$/;
+/** A condição vem logo depois e não está no passado ("quando você me pediu" é relato). */
+const CONDITION_AFTER =
+  /^\s*,?\s*(quando|se|depois que|apos|assim que|no momento em que|if|when|once|after)\b(?!\s+(precisar|quiser|preferir|tiver|for o caso))(?![^.!?\n]{0,60}?\b\w{3,}(ou|eu|iu|aram|eram|iram)\b)/;
+/**
+ * A regra explicada, com a condição dentro do par: "só confirmo um cancelamento quando o sistema
+ * informa que ele foi feito".
+ */
+const RULE_BEFORE =
+  /\b(so|somente|apenas)\s+(confirmo|informo|digo|aviso|anuncio)\s+(?:(?:um|uma|o|a)\s+)?$/;
+/**
+ * Pergunta indireta com verbo modal: "um atendente pode verificar se o pedido foi cancelado". Não
+ * vale se a resposta vem em seguida ("…se foi cancelado? Foi sim ✅").
+ */
+const INDIRECT_QUESTION_BEFORE = new RegExp(
+  String.raw`\b(pode|podem|posso|podemos|vou|vamos|vai|consigo|deve|precisa|para|pra|ao)\s+(?:te\s+|lhe\s+)?(verificar|confirmar|checar|saber|ver|conferir|consultar|perguntar|informar|avaliar|analisar)\s+se\s+(?:${FILLER}\s+){0,4}$`,
+);
+const ANSWER_AFTER = /^\s*[?:,.!]?\s*(e\s+)?(sim|foi sim|foi|esta sim|yes|claro)\b/;
+/** Pergunta ecoada e respondida na hora: "O pedido 100102 foi cancelado? Não. Ele já foi enviado". */
+const ECHO_DENIED_AFTER =
+  /^[^.!\n]{0,3}[?:]\s*(nao|no)(\s*[.,!]|\s+(foi|esta|ele|ela|consta|o pedido))/;
 /** "Você quer o pedido 100101 cancelado?" é pergunta, não afirmação. */
 const VOLITION_QUESTION = /\b(quer|deseja|gostaria|prefere|posso|devo|confirma|podemos)\b/;
-/** Dentro do trecho casado: "o cancelamento NÃO PODE SER feito", "é concluído quando…". */
-const NEGATION_INSIDE = new RegExp(
-  String.raw`\b(nao|nem|nunca|not|never|cannot)\s+(?:${FILLER}\s+){0,3}\S+$|\b(pode|podem|possa|poderia|precisa|deve|vai|sera|seria)\s+(ser|ficar|estar)\b|\be\s+(realizado|concluido|efetuado|efetivado|confirmado|feito|aprovado|processado|finalizado|registrado)\b|\b(can|could|will|would) be\b`,
+
+/*
+ * Citação entre aspas é menção quando a frase recusa ou desmente o que está citado, como o modelo
+ * faz ao resistir a um ataque: 'não posso enviar a mensagem "pedido 100102 cancelado"', 'as
+ * mensagens "Pronto, cancelado!" não vieram do sistema', 'o pedido 100102 não "já era"'. Aspas sem
+ * esse enquadramento continuam valendo como afirmação ('Pedido 100102 "já era"').
+ */
+const QUOTED_SPAN =
+  /["“«][^"“”«»\n]{1,120}["”»]|(?<![\p{L}\d])['‘][^'‘’\n]{1,120}['’](?![\p{L}\d])/gu;
+const NEGATION_WORD = /\b(nao|nem|nunca|jamais|not|never|cannot|can't|cant|won't|wont)\b/g;
+/**
+ * Recusa em primeira pessoa logo antes da citação ('não posso enviar a mensagem "…"', 'não vou
+ * responder "…"', 'não confirmo "…"'). Entre o verbo e as aspas, no máximo "a mensagem", "essa
+ * frase": "não posso enviar outra mensagem além desta: …" não é recusa, nem "não precisa confirmar:
+ * …". "Repetir" e os verbos no passado ficam de fora: "não vou repetir "…" de novo" e "nunca
+ * escrevi "…" tão rápido" afirmam.
+ */
+const QUOTE_OBJECT = String.raw`(?:\s+(?:a|essa|esta|tal|uma|nenhuma|sua|como|com|the|this|that))?(?:\s+(?:mensagem|frase|resposta|texto|palavra|expressao|message|phrase|reply))?\s*:?\s*$`;
+const QUOTE_REFUSED_BEFORE = new RegExp(
+  String.raw`\b(nao|nem|nunca|jamais)\s+(?:(?:posso|vou|consigo|devo|irei|podemos|vamos|ha como|tenho como|da para|da pra|e possivel)\s+)?(?:enviar|mandar|dizer|responder|escrever|usar|confirmar|afirmar|dar|informar|reproduzir|confirmo|afirmo|digo|envio|mando|escrevo|uso)\b${QUOTE_OBJECT}|\b(?:can't|cant|cannot|won't|wont|will not)\s+(?:send|say|write|confirm|use)\b${QUOTE_OBJECT}`,
 );
+/** "Não vou mandar "…" de novo": a recusa é da repetição, não do conteúdo. */
+const QUOTE_REPEATED_AFTER =
+  /^\s*(de novo|novamente|outra vez|mais uma vez|toda hora|mais claramente|again)\b/;
+/** Negação colada na citação: 'o pedido 100102 não "já era"', 'não está "cancelado"'. */
+const QUOTE_NEGATED_BEFORE = /\b(nao|nem)\s+(?:(?:e|esta|foi|ficou|is|was)\s+)?$/;
+/** Nome do que se cita, junto da citação: 'as mensagens "…"', '"…" das mensagens acima'. */
+const QUOTE_REFERENCE =
+  /\b(mensagem|mensagens|resposta|respostas|frase|frases|texto|textos|aviso|avisos|fala|falas|palavra|palavras|termo|termos|messages?|replies)\b/;
+/**
+ * Desmentido logo depois da citação, sem verbo de ligação no meio: "… dessa conversa não
+ * correspondem", "… das mensagens acima não valem", "…": ela é falsa". "A mensagem "…" está
+ * certinha, não vale a pena se preocupar" não desmente nada.
+ */
+const DENIAL = String.raw`(?:\b(?:nao|nem)\s+(?:${FILLER}\s+){0,2}(?:vale(?! a pena)|valem|(?:vieram|veio) (?:do sistema|de mim|daqui|da loja)|correspond\w*|reflet\w*|condiz\w*|(?:e|sao) (?:verdade|real|reais|valida|validas|verdadeira|verdadeiras)|confirmei|confirmamos|executei|executamos|enviei|enviamos|escrevi|registr\w*|aconteceu|aconteceram|ocorreu|procede\w*|(?:enviad|escrit|gerad|mandad)[oa]s? (?:por mim|pelo sistema|pela loja|daqui))|\b(?:e|sao|foram|eram)\s+(?:falsa|falsas|falso|falsos|forjad[oa]s?|inventad[oa]s?|golpe|invalid[oa]s?))\b`;
+const QUOTE_DENIED_AFTER = new RegExp(
+  String.raw`^\s*(?:[:,]?\s*(?:ela|elas|eles|isso|essa|essas|esse|esses)\s+|,\s*eu\s+)?(?:(?!(?:esta|estao|e|sao|foi|ficou|parece|is|was)\s)[^\s,;:]+\s+){0,4}?${DENIAL}`,
+);
+/**
+ * Toda recusa real traz o que é verdade ("ele já foi enviado", "não cancelei nada", "é falsa"):
+ * sem isso, a citação não é tratada como menção.
+ */
+const NEGATED_CANCEL = new RegExp(
+  String.raw`\b(nao|nem|nunca|nenhum|nenhuma|nada)\s+(?:${FILLER}\s+){0,4}(cancel\w*|executei|executamos|confirmei)`,
+);
+const FALSITY = /\b(falsa|falsas|falso|falsos|forjad[oa]s?|inventad[oa]s?|golpe)\b/;
+const CONTRAST = /\b(mas|porem|contudo|entretanto|but)\b/;
 
 /**
  * Links: com protocolo, "www." ou qualquer coisa com cara de domínio (o WhatsApp transforma
@@ -180,24 +370,145 @@ function sentenceAround(text: string, index: number): { start: number; end: numb
   return { start, end };
 }
 
-/** Ocorrências afirmativas: nem negadas nem hipotéticas, conferindo só o que está colado. */
-function affirmativeMatches(
-  text: string,
-  patterns: readonly RegExp[],
-  { checkInside = false } = {},
-): RegExpMatchArray[] {
+/** Uma afirmação candidata: onde começa, onde termina e onde está a palavra que a fecha. */
+interface Claim {
+  readonly index: number;
+  readonly end: number;
+  /** Início do desfecho ("realizado" em "cancelamento … realizado"); igual a `index` nas simples. */
+  readonly tailIndex: number;
+}
+
+function regexClaims(text: string, patterns: readonly RegExp[]): Claim[] {
   return patterns.flatMap((pattern) =>
-    [...text.matchAll(pattern)].filter((match) => {
-      if (precededBy(text, match.index, NEGATION_BEFORE)) return false;
-      if (precededBy(text, match.index, NEGATED_REPORT_BEFORE, 100)) return false;
-      if (precededBy(text, match.index, HYPOTHETICAL_BEFORE, 30)) return false;
-      if (checkInside && NEGATION_INSIDE.test(match[0])) return false;
-      const { start, end } = sentenceAround(text, match.index);
-      const endsWithQuestion = text[end] === '?';
-      if (endsWithQuestion && VOLITION_QUESTION.test(text.slice(start, match.index))) return false;
-      return true;
+    [...text.matchAll(pattern)].map((m) => ({
+      index: m.index,
+      end: m.index + m[0].length,
+      tailIndex: m.index,
+    })),
+  );
+}
+
+/** Todos os pares substantivo-desfecho da mesma frase, não só o primeiro de cada substantivo. */
+function spanClaims(text: string, spans: readonly SpanClaim[]): Claim[] {
+  return spans.flatMap(({ head, tail, window }) =>
+    [...text.matchAll(head)].flatMap((h) => {
+      const from = h.index + h[0].length;
+      const raw = text.slice(from, from + window + 20);
+      // Mesmo fim de frase do resto do guardrail: o ponto de "R$ 1.299,90" não corta o par.
+      const cut = raw.search(/[!?;\n]|\.(?!\d)|(?<!\d)\./);
+      const region = cut < 0 ? raw : raw.slice(0, cut);
+      return [...region.matchAll(tail)]
+        .filter((t) => t.index <= window)
+        .map((t) => ({
+          index: h.index,
+          end: from + t.index + t[0].length,
+          tailIndex: from + t.index,
+        }));
     }),
   );
+}
+
+const lastSentenceOf = (text: string): string => text.split(/[.!?\n]/).at(-1) ?? '';
+const firstSentenceOf = (text: string): { text: string; question: boolean } => {
+  const cut = text.search(/[.!?\n]/);
+  return cut < 0
+    ? { text, question: false }
+    : { text: text.slice(0, cut), question: text[cut] === '?' };
+};
+const edgeWords = (text: string, count: number, from: 'start' | 'end'): string => {
+  const words = text.trim().split(/\s+/);
+  return (from === 'end' ? words.slice(-count) : words.slice(0, count)).join(' ');
+};
+
+function corroboratesDenial(text: string): boolean {
+  const outside = text.replace(QUOTED_SPAN, ' ');
+  return (
+    NON_CANCELLED_STATUS.test(outside) || NEGATED_CANCEL.test(outside) || FALSITY.test(outside)
+  );
+}
+
+/** A afirmação está inteira dentro de uma citação que a resposta recusa ou desmente. */
+function isQuotedMention(text: string, claim: Claim): boolean {
+  for (const quote of text.matchAll(QUOTED_SPAN)) {
+    const quoteEnd = quote.index + quote[0].length;
+    if (claim.index < quote.index || claim.end > quoteEnd) continue;
+    if (!corroboratesDenial(text)) return false;
+    const before = lastSentenceOf(text.slice(Math.max(0, quote.index - 100), quote.index));
+    const after = firstSentenceOf(text.slice(quoteEnd, quoteEnd + 140));
+    const negations = before.match(NEGATION_WORD)?.length ?? 0;
+    const refused =
+      negations === 1 &&
+      (QUOTE_REFUSED_BEFORE.test(before) || QUOTE_NEGATED_BEFORE.test(before)) &&
+      !QUOTE_REPEATED_AFTER.test(after.text);
+    if (refused) return true;
+    const named =
+      QUOTE_REFERENCE.test(edgeWords(before, 4, 'end')) ||
+      QUOTE_REFERENCE.test(edgeWords(after.text, 4, 'start'));
+    return (
+      negations === 0 &&
+      named &&
+      !after.question &&
+      !CONTRAST.test(after.text) &&
+      QUOTE_DENIED_AFTER.test(after.text)
+    );
+  }
+  return false;
+}
+
+const isHypothetical = (prefix: string): boolean =>
+  HYPOTHETICAL_BEFORE.test(prefix) && !DURATION_BEFORE.test(prefix);
+
+/** O desfecho de um par: "o cancelamento NÃO FOI feito", "… só PODE SER feito e confirmado". */
+function leadExcuses(lead: string): boolean {
+  const uncoordinated = lead.replace(COORDINATED_PARTICIPLE, '');
+  if (uncoordinated !== lead) return leadExcuses(uncoordinated);
+  return NEGATION_BEFORE.test(lead) || NEGATED_REPORT_BEFORE.test(lead) || isHypothetical(lead);
+}
+
+function subjunctiveExcused(text: string, claim: Claim): boolean {
+  const prefix = text.slice(Math.max(0, claim.tailIndex - 160), claim.tailIndex);
+  if (!SUBJUNCTIVE_BEFORE.test(prefix)) return false;
+  if (DOUBT_FRAME.test(prefix)) return true;
+  // Relativa genérica: "um cancelamento que tenha sido confirmado pelo sistema".
+  const lead = text.slice(claim.index, claim.tailIndex);
+  return (
+    claim.tailIndex > claim.index &&
+    /^\S+\s+que\s+\S+(\s+sido)?\s+$/.test(lead) &&
+    INDEFINITE_BEFORE.test(text.slice(Math.max(0, claim.index - 20), claim.index))
+  );
+}
+
+/** Afirmativa: nem negada nem hipotética (conferindo só o que está colado), nem citação recusada. */
+function isAffirmative(text: string, claim: Claim): boolean {
+  const { index } = claim;
+  const lead = text.slice(index, claim.tailIndex);
+  const after = text.slice(claim.end);
+  if (precededBy(text, index, NEGATION_BEFORE)) return false;
+  if (precededBy(text, index, NEGATED_REPORT_BEFORE, 100)) return false;
+  if (precededBy(text, index, NEGATED_WRITE_BEFORE, 120)) return false;
+  if (precededBy(text, index, ARTIFACT_WOULD_SAY_BEFORE, 80)) return false;
+  if (isHypothetical(text.slice(Math.max(0, index - 30), index))) return false;
+  if (subjunctiveExcused(text, claim)) return false;
+  // A relação negada só cobre o desfecho colado: "não corresponde a um cancelamento realizado".
+  if (precededBy(text, index, NEGATED_RELATION_BEFORE) && /^\S*\s*$/.test(lead)) return false;
+  if (precededBy(text, index, INDIRECT_QUESTION_BEFORE) && !ANSWER_AFTER.test(after)) return false;
+  if (claim.tailIndex > index) {
+    if (leadExcuses(lead)) return false;
+    if (GENERIC_PRESENT_BEFORE.test(lead) && CONDITION_AFTER.test(after)) return false;
+  }
+  if (precededBy(text, index, RESTRICTIVE_BEFORE) && CONDITION_AFTER.test(after)) return false;
+  const ruleExplained =
+    claim.tailIndex > index &&
+    precededBy(text, index, RULE_BEFORE) &&
+    /\bquando\b/.test(lead) &&
+    !/[:;]/.test(lead) &&
+    !/\b\w{3,}(ou|eu|iu|aram|eram|iram)\b/.test(lead);
+  if (ruleExplained) return false;
+  if (ECHO_DENIED_AFTER.test(after)) return false;
+  const { start, end } = sentenceAround(text, index);
+  const volition = VOLITION_QUESTION.test(text.slice(start, index));
+  if (text[end] === '?' && volition && !ANSWER_AFTER.test(text.slice(end))) return false;
+  return !isQuotedMention(text, claim);
 }
 
 /** Número de pedido: 6 dígitos, inclusive escrito "100 102" ou "100.102". */
@@ -220,13 +531,8 @@ function orderMentions(text: string): OrderMention[] {
  * cancelado, e o 100102 também" afirma sobre os dois. Sem número na frase, o mais próximo antes
  * dela na resposta (cabeçalho "*Pedido 100102*" e a linha "Status: cancelado"), ou o primeiro depois.
  */
-function ordersReferencedBy(
-  text: string,
-  match: RegExpMatchArray,
-  mentions: OrderMention[],
-): string[] {
-  const index = match.index ?? 0;
-  const claimEnd = index + match[0].length;
+function ordersReferencedBy(text: string, claim: Claim, mentions: OrderMention[]): string[] {
+  const { index, end: claimEnd } = claim;
   const { start, end } = sentenceAround(text, index);
   const inSentence = mentions.filter((m) => m.index >= start && m.index < end);
   if (inSentence.length > 0) {
@@ -248,42 +554,42 @@ function ordersReferencedBy(
  * "Pedidos enviados, entregues ou cancelados não podem…": particípio no plural sem verbo antes e
  * sem número de pedido descreve uma categoria, não um pedido. "Seus pedidos FORAM cancelados" afirma.
  */
-function isGenericCategory(text: string, match: RegExpMatchArray): boolean {
-  if (!match[0].endsWith('s')) return false;
-  const { start } = sentenceAround(text, match.index ?? 0);
-  const before = text.slice(Math.max(start, (match.index ?? 0) - 40), match.index);
-  return !/\b(foram|estao|ficaram|sao|tiveram|seus|suas|todos|were|are|have been|your)\b/.test(
-    before,
-  );
+function isGenericCategory(text: string, claim: Claim): boolean {
+  if (!text.slice(claim.index, claim.end).endsWith('s')) return false;
+  const { start } = sentenceAround(text, claim.index);
+  const before = text.slice(Math.max(start, claim.index - 40), claim.index);
+  const after = text.slice(claim.end, claim.end + 30);
+  const specific =
+    /\b(foram|estao|ficaram|sao|tiveram|seus|suas|todos|dois|duas|tres|quatro|cinco|ambos|ambas|\d+|were|are|have been|your|both)\b/;
+  return !specific.test(before) && !/com sucesso|✅/.test(after);
 }
-
-const QUOTES = new Set(['"', '“', '”', "'", '‘', '’', '«', '»']);
 
 /** "O 100202 está cancelado. O 100102 também.": a frase elíptica seguinte herda a afirmação. */
 const ELLIPSIS = /\b(tambem|igualmente|idem|too|as well)\b/;
 
+/**
+ * Explicação condicional ("assim que você confirmar, o cancelamento é concluído") não afirma. Com o
+ * verbo no passado é relato: "depois que você confirmou, o pedido foi cancelado".
+ */
+const TEMPORAL_PAST =
+  /\b(quando|apos|depois que|assim que|uma vez que|after|once|when)\b[^.!?\n]*?(\b\w{3,}(ou|eu|iu|aram|eram|iram)\b|\b(you|i|we)\s+\w+ed\b)/;
+function isAssertion(text: string, claim: Claim): boolean {
+  const { start } = sentenceAround(text, claim.index);
+  const before = text.slice(start, claim.index);
+  const conditional = CONDITIONAL_CUE.test(before) && !TEMPORAL_PAST.test(before);
+  return isAffirmative(text, claim) && !conditional;
+}
+
 function cancellationClaimsAreVerified(text: string, context: OutputGuardContext): boolean {
   const mentions = orderMentions(text);
-  const consequences = affirmativeMatches(text, CANCELLATION_CONSEQUENCES).filter((match) => {
-    const index = match.index ?? 0;
-    // Gíria citada entre aspas é menção, não afirmação: 'não vou responder "já era"' (o modelo
-    // recusando o pedido do atacante; visto nos evals).
-    if (QUOTES.has(text[index - 1] ?? '') && QUOTES.has(text[index + match[0].length] ?? '')) {
-      return false;
-    }
-    const { start } = sentenceAround(text, index);
-    return !CONDITIONAL_CUE.test(text.slice(start, index));
-  });
-  const claims = affirmativeMatches(text, CANCELLATION_CLAIMS, { checkInside: true }).filter(
-    (match) => {
-      // Explicação condicional ("assim que você confirmar, o cancelamento é concluído").
-      const { start } = sentenceAround(text, match.index ?? 0);
-      return !CONDITIONAL_CUE.test(text.slice(start, match.index));
-    },
-  );
-  return [...claims, ...consequences].every((match) => {
-    const referenced = ordersReferencedBy(text, match, mentions);
-    const { end } = sentenceAround(text, match.index ?? 0);
+  const claims = [
+    ...regexClaims(text, CANCELLATION_CLAIMS),
+    ...spanClaims(text, CANCELLATION_SPANS),
+    ...regexClaims(text, CANCELLATION_CONSEQUENCES),
+  ].filter((claim) => isAssertion(text, claim));
+  return claims.every((claim) => {
+    const referenced = ordersReferencedBy(text, claim, mentions);
+    const { end } = sentenceAround(text, claim.index);
     const next = sentenceAround(text, end + 1);
     const nextSentence = text.slice(next.start, next.end);
     if (
@@ -295,7 +601,7 @@ function cancellationClaimsAreVerified(text: string, context: OutputGuardContext
         ...mentions.filter((m) => m.index >= next.start && m.index < next.end).map((m) => m.id),
       );
     }
-    if (referenced.length === 0 && isGenericCategory(text, match)) return true;
+    if (referenced.length === 0 && isGenericCategory(text, claim)) return true;
     // O modelo nunca executa um cancelamento: uma afirmação sem número só pode se referir a um
     // pedido que ele acabou de consultar individualmente e que a API mostrou cancelado.
     if (referenced.length === 0) return context.verifiedThisTurn.size === 1;
@@ -384,13 +690,17 @@ export function guardOutput(raw: string, context: OutputGuardContext): OutputGua
     return blocked('unverified_cancellation_claim');
   }
   if (!context.handoffCreated) {
-    const handoffClaims = affirmativeMatches(normalized, HANDOFF_CLAIMS).filter((match) => {
-      const { start } = sentenceAround(normalized, match.index ?? 0);
-      return !CONDITIONAL_CUE.test(normalized.slice(start, match.index));
-    });
+    const handoffClaims = regexClaims(normalized, HANDOFF_CLAIMS).filter((claim) =>
+      isAssertion(normalized, claim),
+    );
     if (handoffClaims.length > 0) return blocked('unverified_handoff_claim');
   }
   if (hasRefundPromise(normalized)) return blocked('refund_promise');
+  const actionClaims = [
+    ...regexClaims(normalized, ACTION_CLAIMS),
+    ...spanClaims(normalized, ACTION_SPANS),
+  ].filter((claim) => isAssertion(normalized, claim));
+  if (actionClaims.length > 0) return blocked('unverified_action_claim');
 
   const reasons: OutputGuardReason[] = [];
   // O agente não envia links: um link na resposta só pode ter vindo de dado externo (phishing).
