@@ -1,0 +1,11 @@
+# Normaliza tudo para LF no checkout, inclusive no Windows (core.autocrlf=true).
+# Scripts montados em containers Linux quebram com CRLF: "#!/bin/sh\r" vira
+# "bad interpreter" e o Postgres sai com código 126 ao rodar o init-databases.sh.
+* text=auto eol=lf
+
+*.sh text eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary

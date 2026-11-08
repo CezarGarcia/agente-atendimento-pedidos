@@ -19,6 +19,10 @@ determinístico e com a API principal de pedidos.
 
 Requisitos: Docker com Docker Compose. Para desenvolver: Node.js 22.12+.
 
+> **Windows:** se o Postgres sair com código `126`, o clone foi feito com quebras de linha CRLF
+> (antes do `.gitattributes`). Corrija com `git rm --cached -r . -q; git reset --hard` e depois
+> `docker compose down -v` antes de subir de novo (o script de init só roda com volume novo).
+
 ### Com o modelo real
 
 ```bash
