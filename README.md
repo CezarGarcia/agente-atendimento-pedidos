@@ -112,6 +112,7 @@ O CI (GitHub Actions) roda qualidade e testes, build das imagens e o E2E com a s
 | Exemplos de conversa                                       | [`docs/08-exemplos-de-conversa.md`](docs/08-exemplos-de-conversa.md)                                                                                          |
 | Avaliações com o modelo real (relatórios e histórico)      | [`docs/evals/README.md`](docs/evals/README.md)                                                                                                                |
 | Decisões e limitações                                      | [`docs/09-decisoes-e-limitacoes.md`](docs/09-decisoes-e-limitacoes.md)                                                                                        |
+| Diagramas dos fluxos (turno, segurança, API, Fake Store)   | [`docs/10-diagramas.md`](docs/10-diagramas.md)                                                                                                                |
 
 ## Arquitetura
 
@@ -146,6 +147,12 @@ flowchart LR
     AG --- DBA
     API --- DBO
 ```
+
+Como um turno funciona, da mensagem à resposta. Outros sete diagramas (defesa em camadas,
+sequência do cancelamento, estados da confirmação, transação na API, Fake Store, guardrail de saída
+e avaliação) estão em [`docs/10-diagramas.md`](docs/10-diagramas.md).
+
+![Um turno do agente, da mensagem à resposta](docs/assets/diagramas/01-turno-do-agente.svg)
 
 | Componente                           | Responsabilidade                                                                                       |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------ |

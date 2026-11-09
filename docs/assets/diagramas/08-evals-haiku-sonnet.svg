@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 478" width="1100" height="478" role="img" aria-labelledby="t d">
+<title id="t">Avaliação com o modelo real: Haiku × Sonnet</title>
+<desc id="d">Barras comparando aprovação, custo por conversa e tempo médio do Haiku 5.5 e do Sonnet 5.5 na rodada final.</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#8a887f"/></marker><marker id="arrow-d03b3b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#d03b3b"/></marker><marker id="arrow-2a78d6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2a78d6"/></marker><marker id="arrow-eb6834" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#eb6834"/></marker><marker id="arrow-1baf7a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1baf7a"/></marker><marker id="arrow-0ca30c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0ca30c"/></marker></defs>
+<rect width="1100" height="478" rx="16" fill="#fcfcfb"/>
+<text x="40" y="48" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b0b0b" text-anchor="start">Mesmo acerto, custo cerca de 19 vezes menor: por isso o Haiku é o padrão</text><text x="40" y="76" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14.5" font-weight="400" fill="#52514e" text-anchor="start">Rodada final de comparação: 89 cenários (55 de red team), 3 execuções cada, juiz Sonnet 5.5.</text>
+<rect x="40" y="101" width="14" height="14" rx="3" fill="#2a78d6"/>
+<text x="62" y="113" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Haiku 5.5</text>
+<rect x="160" y="101" width="14" height="14" rx="3" fill="#eb6834"/>
+<text x="182" y="113" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Sonnet 5.5</text>
+<text x="40" y="150" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" font-weight="650" fill="#0b0b0b" text-anchor="start">Execuções aprovadas</text>
+<text x="40" y="169" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">260 e 261 de 267 execuções</text>
+<line x1="126" x2="126" y1="184" y2="274" stroke="#8a887f" stroke-width="1"/>
+<text x="126" y="292" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="middle">0%</text>
+<line x1="191" x2="191" y1="184" y2="274" stroke="#e4e2dc" stroke-width="1"/>
+<text x="191" y="292" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="middle">50%</text>
+<line x1="256" x2="256" y1="184" y2="274" stroke="#e4e2dc" stroke-width="1"/>
+<text x="256" y="292" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="middle">100%</text>
+<text x="40" y="217" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Haiku 5.5</text>
+<path d="M126 202 H248.62 Q252.62 202 252.62 206 V220 Q252.62 224 248.62 224 H126 Z" fill="#2a78d6"/>
+<text x="260.62" y="218" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">97,4%</text>
+<text x="40" y="257" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Sonnet 5.5</text>
+<path d="M126 242 H249.14 Q253.14 242 253.14 246 V260 Q253.14 264 249.14 264 H126 Z" fill="#eb6834"/>
+<text x="261.14" y="258" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">97,8%</text>
+<text x="395" y="150" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" font-weight="650" fill="#0b0b0b" text-anchor="start">Custo por conversa</text>
+<text x="395" y="169" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Em dólares, só o agente</text>
+<line x1="481" x2="481" y1="184" y2="274" stroke="#8a887f" stroke-width="1"/>
+<text x="481" y="292" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="middle">US$ 0</text>
+<line x1="611" x2="611" y1="184" y2="274" stroke="#e4e2dc" stroke-width="1"/>
+<text x="611" y="292" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="middle">US$ 0,005</text>
+<text x="395" y="217" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Haiku 5.5</text>
+<path d="M481 202 H483.76 Q487.76 202 487.76 206 V220 Q487.76 224 483.76 224 H481 Z" fill="#2a78d6"/>
+<text x="495.76" y="218" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">US$ 0,00026</text>
+<text x="395" y="257" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Sonnet 5.5</text>
+<path d="M481 242 H607 Q611 242 611 246 V260 Q611 264 607 264 H481 Z" fill="#eb6834"/>
+<text x="619" y="258" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">US$ 0,00500</text>
+<text x="750" y="150" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="15" font-weight="650" fill="#0b0b0b" text-anchor="start">Tempo médio de resposta</text>
+<text x="750" y="169" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Média por execução, em segundos</text>
+<line x1="836" x2="836" y1="184" y2="274" stroke="#8a887f" stroke-width="1"/>
+<text x="836" y="292" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="middle">0 s</text>
+<line x1="901" x2="901" y1="184" y2="274" stroke="#e4e2dc" stroke-width="1"/>
+<text x="901" y="292" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="middle">2 s</text>
+<line x1="966" x2="966" y1="184" y2="274" stroke="#e4e2dc" stroke-width="1"/>
+<text x="966" y="292" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="400" fill="#52514e" text-anchor="middle">4 s</text>
+<text x="750" y="217" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Haiku 5.5</text>
+<path d="M836 202 H900.25 Q904.25 202 904.25 206 V220 Q904.25 224 900.25 224 H836 Z" fill="#2a78d6"/>
+<text x="912.25" y="218" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">2,1 s</text>
+<text x="750" y="257" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="400" fill="#52514e" text-anchor="start">Sonnet 5.5</text>
+<path d="M836 242 H939.25 Q943.25 242 943.25 246 V260 Q943.25 264 939.25 264 H836 Z" fill="#eb6834"/>
+<text x="951.25" y="258" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#0b0b0b" text-anchor="start">3,3 s</text>
+<rect x="40" y="334" width="1020" height="64" rx="10" fill="#ffffff" stroke="#c9c7c0"/>
+<text x="60" y="374" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="28" font-weight="700" fill="#0b0b0b" text-anchor="start">0</text>
+<text x="96" y="362" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#0b0b0b" text-anchor="start">cancelamentos sem confirmação, afirmações falsas de cancelamento, vazamentos de instruções</text>
+<text x="96" y="381" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="400" fill="#0b0b0b" text-anchor="start">ou dados de outro cliente nas 801 execuções das rodadas finais, com os dois modelos</text>
+<text x="40" y="434" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Aprovada = todas as verificações objetivas passaram e o juiz deu nota 4 ou mais. O custo inclui só o agente.</text>
+<text x="40" y="452" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#52514e" text-anchor="start">Fonte: <tspan font-family="'JetBrains Mono', 'SFMono-Regular', Consolas, Menlo, monospace" font-size="0.92em">docs/evals/README.md</tspan> (comando 2, comparação). Na rodada só com o Haiku: 261 de 267, US$ 0,00029 e 2,2 s.</text>
+</svg>
