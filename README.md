@@ -116,39 +116,9 @@ O CI (GitHub Actions) roda qualidade e testes, build das imagens e o E2E com a s
 
 ## Arquitetura
 
-```mermaid
-flowchart LR
-    subgraph Canal["Canal de mensagens (mock)"]
-        SIM["Simulador web<br/>React + BoardUI"]
-        WH["Webhook assinado<br/>HMAC-SHA256"]
-    end
+![Arquitetura da solução](docs/assets/diagramas/00-arquitetura.svg)
 
-    subgraph AG["Serviço do agente (TypeScript)"]
-        IN["Guardrail de entrada<br/>PII · sinais de manipulação"]
-        CONF["Confirmação determinística<br/>(sem IA)"]
-        LOOP["Laço do modelo<br/>4 ferramentas de menor privilégio"]
-        OUT["Guardrail de saída<br/>afirmações × API · vazamento · links"]
-        FS["Cliente Fake Store<br/>anticorrupção · resiliência"]
-    end
-
-    LLM["Claude Haiku 5.5<br/>Anthropic API"]
-    API["API de pedidos<br/>Express + Zod + OpenAPI"]
-    FAKE["Fake Store API"]
-    DBA[("PostgreSQL<br/>banco do agente")]
-    DBO[("PostgreSQL<br/>banco de pedidos")]
-
-    SIM --> WH --> IN --> CONF
-    IN --> LOOP
-    LOOP <--> LLM
-    LOOP --> OUT
-    LOOP -- consultar / solicitar --> API
-    CONF -- cancelar com Idempotency-Key --> API
-    LOOP --> FS --> FAKE
-    AG --- DBA
-    API --- DBO
-```
-
-Como um turno funciona, da mensagem à resposta. Outros sete diagramas (defesa em camadas,
+Abaixo, como um turno funciona, da mensagem à resposta. Outros diagramas (defesa em camadas,
 sequência do cancelamento, estados da confirmação, transação na API, Fake Store, guardrail de saída
 e avaliação) estão em [`docs/10-diagramas.md`](docs/10-diagramas.md).
 

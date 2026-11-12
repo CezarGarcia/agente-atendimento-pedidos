@@ -1,11 +1,12 @@
 # Diagramas: como o sistema funciona
 
-Oito figuras que explicam os fluxos principais. Cada uma aponta para o código que ela descreve; os
+Nove figuras que explicam os fluxos principais. Cada uma aponta para o código que ela descreve; os
 detalhes e o porquê de cada decisão estão nos outros documentos.
 
 Cores usadas em todas as figuras: **azul** = código determinístico do agente, **laranja** = modelo
 de IA, **verde** = API de pedidos, **vermelho** = bloqueio ou erro, **branco** = resposta fixa.
 
+0. [Arquitetura da solução](#0-arquitetura-da-solução)
 1. [Um turno do agente, da mensagem à resposta](#1-um-turno-do-agente)
 2. [Defesa em camadas](#2-defesa-em-camadas)
 3. [Cancelamento em dois turnos](#3-cancelamento-em-dois-turnos)
@@ -14,6 +15,13 @@ de IA, **verde** = API de pedidos, **vermelho** = bloqueio ou erro, **branco** =
 6. [Integração com a Fake Store](#6-integração-com-a-fake-store)
 7. [Guardrail de saída](#7-guardrail-de-saída)
 8. [Avaliação com o modelo real](#8-avaliação-com-o-modelo-real)
+
+## 0. Arquitetura da solução
+
+![Arquitetura da solução](assets/diagramas/00-arquitetura.svg)
+
+As peças e como elas se ligam: o canal simulado, o serviço do agente com o modelo, a API de
+pedidos, a Fake Store e o PostgreSQL com um banco para cada serviço.
 
 ## 1. Um turno do agente
 
